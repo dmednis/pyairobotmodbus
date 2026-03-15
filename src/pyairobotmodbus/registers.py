@@ -35,10 +35,10 @@ REG_EXTRACT_AIRFLOW = 1052  # m3/h, only with constant flow feature
 # Contiguous read blocks for efficient batch reads
 # (start_address, count)
 SENSOR_BLOCK_1 = (1000, 12)  # 1000-1011: firmware, temps, humidity, CO2
-SENSOR_BLOCK_2 = (1014, 6)   # 1014-1019: fan levels, RPMs, working time
-SENSOR_BLOCK_3 = (1026, 4)   # 1026-1029: errors, server connected, VOC
-SENSOR_BLOCK_4 = (1031, 4)   # 1031-1034: PM2.5, heat recovery
-SENSOR_BLOCK_5 = (1051, 2)   # 1051-1052: airflow
+SENSOR_BLOCK_2 = (1014, 6)  # 1014-1019: fan levels, RPMs, working time
+SENSOR_BLOCK_3 = (1026, 4)  # 1026-1029: errors, server connected, VOC
+SENSOR_BLOCK_4 = (1031, 4)  # 1031-1034: PM2.5, heat recovery
+SENSOR_BLOCK_5 = (1051, 2)  # 1051-1052: airflow
 
 # ---------------------------------------------------------------------------
 # Read/write holding registers (FC03/FC06) — settings and setpoints
@@ -60,12 +60,12 @@ REG_VOC_SETPOINT = 2034
 REG_PM25_SETPOINT = 2064
 
 # Settings read block
-SETTINGS_BLOCK_1 = (2000, 1)    # 2000: working mode
-SETTINGS_BLOCK_2 = (2003, 6)    # 2003-2008: setpoints, fan levels
-SETTINGS_BLOCK_3 = (2009, 6)    # 2009-2014: flags, timeouts, UI flags
-SETTINGS_BLOCK_4 = (2015, 4)    # 2015-2018: UI flags1, filter reminder
-SETTINGS_BLOCK_5 = (2034, 1)    # 2034: VOC setpoint
-SETTINGS_BLOCK_6 = (2064, 1)    # 2064: PM2.5 setpoint
+SETTINGS_BLOCK_1 = (2000, 1)  # 2000: working mode
+SETTINGS_BLOCK_2 = (2003, 6)  # 2003-2008: setpoints, fan levels
+SETTINGS_BLOCK_3 = (2009, 6)  # 2009-2014: flags, timeouts, UI flags
+SETTINGS_BLOCK_4 = (2015, 4)  # 2015-2018: UI flags1, filter reminder
+SETTINGS_BLOCK_5 = (2034, 1)  # 2034: VOC setpoint
+SETTINGS_BLOCK_6 = (2064, 1)  # 2064: PM2.5 setpoint
 
 # ---------------------------------------------------------------------------
 # Coil registers (FC01/FC05) — boolean controls
@@ -83,10 +83,10 @@ COIL_PM_CONTROL_ENABLE = 4031
 COIL_MODBUS_ON = 4036
 
 # Coil read blocks
-COIL_BLOCK_1 = (4000, 7)    # 4000-4006: power, bypass, boost, overpressure, reboot
-COIL_BLOCK_2 = (4020, 1)    # 4020: filter alert
-COIL_BLOCK_3 = (4027, 1)    # 4027: humidity control
-COIL_BLOCK_4 = (4030, 7)    # 4030-4036: VOC, PM, modbus
+COIL_BLOCK_1 = (4000, 7)  # 4000-4006: power, bypass, boost, overpressure, reboot
+COIL_BLOCK_2 = (4020, 1)  # 4020: filter alert
+COIL_BLOCK_3 = (4027, 1)  # 4027: humidity control
+COIL_BLOCK_4 = (4030, 7)  # 4030-4036: VOC, PM, modbus
 
 # ---------------------------------------------------------------------------
 # Settings flags bitmasks (register 2009)

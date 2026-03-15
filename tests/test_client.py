@@ -7,11 +7,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from pyairobotmodbus.client import AirobotModbusClient
-from pyairobotmodbus.exceptions import AirobotConnectionError, AirobotReadError, AirobotWriteError
+from pyairobotmodbus.exceptions import (
+    AirobotConnectionError,
+    AirobotReadError,
+    AirobotWriteError,
+)
 from pyairobotmodbus.models import ErrorFlag, OperatingMode
 
 
-def _make_register_result(registers: list[int]):
+def _make_register_result(registers: list[int]) -> MagicMock:
     """Create a mock Modbus register response."""
     result = MagicMock()
     result.isError.return_value = False
@@ -19,15 +23,16 @@ def _make_register_result(registers: list[int]):
     return result
 
 
-def _make_coil_result(bits: list[bool]):
+def _make_coil_result(bits: list[bool]) -> MagicMock:
     """Create a mock Modbus coil response."""
     result = MagicMock()
     result.isError.return_value = False
-    result.bits = bits + [False] * (16 - len(bits))  # pad to 16 bits like real responses
+    # pad to 16 bits like real responses
+    result.bits = bits + [False] * (16 - len(bits))
     return result
 
 
-def _make_error_result():
+def _make_error_result() -> MagicMock:
     """Create a mock Modbus error response."""
     result = MagicMock()
     result.isError.return_value = True
@@ -35,7 +40,7 @@ def _make_error_result():
     return result
 
 
-def _make_write_result():
+def _make_write_result() -> MagicMock:
     """Create a mock successful write response."""
     result = MagicMock()
     result.isError.return_value = False
@@ -86,8 +91,9 @@ class TestReadData:
         # 65526 unsigned = -10 signed (0x10000 - 10 = 65526)
 
         # Sensor block 2: 1014-1019 (6 registers)
-        # supply_fan=5, extract_fan=5, supply_rpm=1200, extract_rpm=1100, working_time=0x00010000
-        s2 = [5, 5, 1200, 1100, 1, 0]  # working_time = 1<<16 = 65536 ms
+        # supply_fan=5, extract_fan=5, supply_rpm=1200,
+        # extract_rpm=1100, working_time=0x00010000
+        s2 = [5, 5, 1200, 1100, 1, 0]  # working_time = 65536 ms
 
         # Sensor block 3: 1026-1029 (4 registers)
         # errors=0 (2 regs), server_connected=1, voc=150
@@ -104,10 +110,12 @@ class TestReadData:
         r1 = [1]  # automatic mode
 
         # Settings block 2: 2003-2008 (6 registers)
-        r2 = [600, 800, 5, 0, 5, 0]  # humidity=60.0, co2=800, fan=5, gap, overpressure_fan=5
+        # humidity=60.0, co2=800, fan=5, gap, overpressure_fan=5
+        r2 = [600, 800, 5, 0, 5, 0]
 
         # Settings block 3: 2009-2014 (6 registers)
-        # flags=1, boost_timeout=1800 (2 regs), overpressure_timeout=1800 (2 regs), ui_flags=9
+        # flags=1, boost_timeout=1800 (2 regs),
+        # overpressure_timeout=1800 (2 regs), ui_flags=9
         r3 = [1, 0, 1800, 0, 1800, 9]
 
         # Settings block 4: 2015-2018 (4 registers)
@@ -208,18 +216,14 @@ class TestWriteData:
         c, mock = client
         mock.write_register = AsyncMock(return_value=_make_write_result())
         await c.async_set_mode(OperatingMode.MANUAL)
-        mock.write_register.assert_awaited_once_with(
-            address=2000, value=2, device_id=1
-        )
+        mock.write_register.assert_awaited_once_with(address=2000, value=2, device_id=1)
 
     @pytest.mark.asyncio
     async def test_set_fan_speed(self, client):
         c, mock = client
         mock.write_register = AsyncMock(return_value=_make_write_result())
         await c.async_set_fan_speed(7)
-        mock.write_register.assert_awaited_once_with(
-            address=2005, value=7, device_id=1
-        )
+        mock.write_register.assert_awaited_once_with(address=2005, value=7, device_id=1)
 
     @pytest.mark.asyncio
     async def test_set_fan_speed_out_of_range(self, client):
@@ -256,27 +260,21 @@ class TestWriteData:
         c, mock = client
         mock.write_coil = AsyncMock(return_value=_make_write_result())
         await c.async_set_power(False)
-        mock.write_coil.assert_awaited_once_with(
-            address=4000, value=False, device_id=1
-        )
+        mock.write_coil.assert_awaited_once_with(address=4000, value=False, device_id=1)
 
     @pytest.mark.asyncio
     async def test_set_boost(self, client):
         c, mock = client
         mock.write_coil = AsyncMock(return_value=_make_write_result())
         await c.async_set_boost(True)
-        mock.write_coil.assert_awaited_once_with(
-            address=4004, value=True, device_id=1
-        )
+        mock.write_coil.assert_awaited_once_with(address=4004, value=True, device_id=1)
 
     @pytest.mark.asyncio
     async def test_reboot(self, client):
         c, mock = client
         mock.write_coil = AsyncMock(return_value=_make_write_result())
         await c.async_reboot()
-        mock.write_coil.assert_awaited_once_with(
-            address=4006, value=True, device_id=1
-        )
+        mock.write_coil.assert_awaited_once_with(address=4006, value=True, device_id=1)
 
     @pytest.mark.asyncio
     async def test_write_error(self, client):

@@ -23,15 +23,13 @@ class TestErrorFlag:
         assert ErrorFlag.FIRE_ALARM in flags
 
     def test_multiple_flags(self):
-        flags = ErrorFlag(ERROR_FAN1_AND_FILTER := 2 | 2048)
+        flags = ErrorFlag(2 | 2048)
         assert ErrorFlag.FAN1 in flags
         assert ErrorFlag.FILTER in flags
         assert ErrorFlag.FIRE_ALARM not in flags
 
     def test_all_flags(self):
-        all_val = (
-            1 | 2 | 4 | 8 | 16 | 32 | 64 | 128 | 256 | 512 | 1024 | 2048
-        )
+        all_val = 1 | 2 | 4 | 8 | 16 | 32 | 64 | 128 | 256 | 512 | 1024 | 2048
         flags = ErrorFlag(all_val)
         assert ErrorFlag.FIRE_ALARM in flags
         assert ErrorFlag.FAN1 in flags

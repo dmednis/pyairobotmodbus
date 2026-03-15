@@ -133,9 +133,7 @@ class AirobotModbusClient:
                 f"Communication error reading register {address}: {exc}"
             ) from exc
         if result.isError():
-            raise AirobotReadError(
-                f"Modbus error reading register {address}: {result}"
-            )
+            raise AirobotReadError(f"Modbus error reading register {address}: {result}")
         return list(result.registers)
 
     async def _read_coils(self, address: int, count: int) -> list[bool]:
@@ -149,9 +147,7 @@ class AirobotModbusClient:
                 f"Communication error reading coil {address}: {exc}"
             ) from exc
         if result.isError():
-            raise AirobotReadError(
-                f"Modbus error reading coil {address}: {result}"
-            )
+            raise AirobotReadError(f"Modbus error reading coil {address}: {result}")
         return list(result.bits[:count])
 
     @staticmethod
@@ -353,9 +349,7 @@ class AirobotModbusClient:
                 f"Communication error writing coil {address}: {exc}"
             ) from exc
         if result.isError():
-            raise AirobotWriteError(
-                f"Modbus error writing coil {address}: {result}"
-            )
+            raise AirobotWriteError(f"Modbus error writing coil {address}: {result}")
 
     async def async_set_mode(self, mode: OperatingMode) -> None:
         """Set the device working mode."""
