@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pyairobotmodbus"
+version = "0.1.0"
+description = "Python library for communicating with Airobot ventilation units via Modbus TCP"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "pymodbus>=3.10,<4",
+]
+
+[project.scripts]
+pyairobotmodbus = "pyairobotmodbus.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pyairobotmodbus"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

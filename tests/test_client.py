@@ -1,0 +1,305 @@
+"""Tests for AirobotModbusClient with mocked pymodbus."""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from pyairobotmodbus.client import AirobotModbusClient
+from pyairobotmodbus.exceptions import AirobotConnectionError, AirobotReadError, AirobotWriteError
+from pyairobotmodbus.models import ErrorFlag, OperatingMode
+
+
+def _make_register_result(registers: list[int]):
+    """Create a mock Modbus register response."""
+    result = MagicMock()
+    result.isError.return_value = False
+    result.registers = registers
+    return result
+
+
+def _make_coil_result(bits: list[bool]):
+    """Create a mock Modbus coil response."""
+    result = MagicMock()
+    result.isError.return_value = False
+    result.bits = bits + [False] * (16 - len(bits))  # pad to 16 bits like real responses
+    return result
+
+
+def _make_error_result():
+    """Create a mock Modbus error response."""
+    result = MagicMock()
+    result.isError.return_value = True
+    result.__str__ = lambda self: "Modbus Error"
+    return result
+
+
+def _make_write_result():
+    """Create a mock successful write response."""
+    result = MagicMock()
+    result.isError.return_value = False
+    return result
+
+
+@pytest.fixture
+def client():
+    """Create a client with a mocked underlying pymodbus client."""
+    with patch("pyairobotmodbus.client.AsyncModbusTcpClient") as mock_cls:
+        mock_modbus = AsyncMock()
+        mock_modbus.connected = True
+        mock_modbus.connect = AsyncMock(return_value=True)
+        mock_cls.return_value = mock_modbus
+        c = AirobotModbusClient("192.168.1.100")
+        yield c, mock_modbus
+
+
+class TestConnection:
+    @pytest.mark.asyncio
+    async def test_connect_success(self, client):
+        c, mock = client
+        await c.connect()
+        mock.connect.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_connect_failure(self, client):
+        c, mock = client
+        mock.connect.return_value = False
+        with pytest.raises(AirobotConnectionError):
+            await c.connect()
+
+    @pytest.mark.asyncio
+    async def test_disconnect(self, client):
+        c, mock = client
+        await c.disconnect()
+        mock.close.assert_called_once()
+
+
+class TestReadData:
+    @pytest.mark.asyncio
+    async def test_async_get_data(self, client):
+        c, mock = client
+
+        # Sensor block 1: 1000-1011 (12 registers)
+        # firmware=300, temps=215,220,50,-10,0, humidity=650,600,800,400,0, co2=450
+        s1 = [300, 215, 220, 50, 65526, 0, 650, 600, 800, 400, 0, 450]
+        # 65526 unsigned = -10 signed (0x10000 - 10 = 65526)
+
+        # Sensor block 2: 1014-1019 (6 registers)
+        # supply_fan=5, extract_fan=5, supply_rpm=1200, extract_rpm=1100, working_time=0x00010000
+        s2 = [5, 5, 1200, 1100, 1, 0]  # working_time = 1<<16 = 65536 ms
+
+        # Sensor block 3: 1026-1029 (4 registers)
+        # errors=0 (2 regs), server_connected=1, voc=150
+        s3 = [0, 0, 1, 150]
+
+        # Sensor block 4: 1031-1034 (4 registers)
+        # pm25=25 (2 regs), gap, heat_recovery=85
+        s4 = [0, 25, 0, 85]
+
+        # Sensor block 5: 1051-1052 (2 registers)
+        s5 = [120, 115]
+
+        # Settings block 1: 2000 (1 register)
+        r1 = [1]  # automatic mode
+
+        # Settings block 2: 2003-2008 (6 registers)
+        r2 = [600, 800, 5, 0, 5, 0]  # humidity=60.0, co2=800, fan=5, gap, overpressure_fan=5
+
+        # Settings block 3: 2009-2014 (6 registers)
+        # flags=1, boost_timeout=1800 (2 regs), overpressure_timeout=1800 (2 regs), ui_flags=9
+        r3 = [1, 0, 1800, 0, 1800, 9]
+
+        # Settings block 4: 2015-2018 (4 registers)
+        r4 = [8, 0, 4320, 100]
+
+        # Settings block 5: 2034 (1 register)
+        r5 = [200]
+
+        # Settings block 6: 2064 (1 register)
+        r6 = [50]
+
+        # Sensor blocks use input registers (FC04)
+        mock.read_input_registers = AsyncMock(
+            side_effect=[
+                _make_register_result(s1),
+                _make_register_result(s2),
+                _make_register_result(s3),
+                _make_register_result(s4),
+                _make_register_result(s5),
+            ]
+        )
+
+        # Settings blocks use holding registers (FC03)
+        mock.read_holding_registers = AsyncMock(
+            side_effect=[
+                _make_register_result(r1),
+                _make_register_result(r2),
+                _make_register_result(r3),
+                _make_register_result(r4),
+                _make_register_result(r5),
+                _make_register_result(r6),
+            ]
+        )
+
+        # Coil blocks
+        c1 = [True, False, False, False, False, False, False]  # power on
+        c2 = [False]  # no filter alert
+        c3 = [False]  # humidity control off
+        c4 = [False, False, False, False, False, False, False]  # all off
+
+        mock.read_coils = AsyncMock(
+            side_effect=[
+                _make_coil_result(c1),
+                _make_coil_result(c2),
+                _make_coil_result(c3),
+                _make_coil_result(c4),
+            ]
+        )
+
+        data = await c.async_get_data()
+
+        assert data.firmware_version == 300
+        assert data.extract_air_temp == pytest.approx(21.5)
+        assert data.supply_air_temp == pytest.approx(22.0)
+        assert data.outside_air_temp == pytest.approx(5.0)
+        assert data.exhaust_air_temp == pytest.approx(-1.0)
+        assert data.extra_temp == pytest.approx(0.0)
+        assert data.extract_air_humidity == pytest.approx(65.0)
+        assert data.supply_air_humidity == pytest.approx(60.0)
+        assert data.co2_level == 450
+        assert data.supply_fan_level == 5
+        assert data.extract_fan_level == 5
+        assert data.supply_fan_rpm == 1200
+        assert data.extract_fan_rpm == 1100
+        assert data.working_time_ms == 65536
+        assert data.error_flags == ErrorFlag.NONE
+        assert data.server_connected is True
+        assert data.voc == 150
+        assert data.pm25 == 25
+        assert data.heat_recovery_efficiency == 85
+        assert data.supply_airflow == 120
+        assert data.extract_airflow == 115
+        assert data.operating_mode == OperatingMode.AUTOMATIC
+        assert data.humidity_setpoint == pytest.approx(60.0)
+        assert data.co2_setpoint == 800
+        assert data.manual_fan_level == 5
+        assert data.boost_timeout == 1800
+        assert data.overpressure_timeout == 1800
+        assert data.filter_reminder_interval == 4320
+        assert data.voc_setpoint == 200
+        assert data.pm25_setpoint == 50
+        assert data.power_on is True
+        assert data.bypass_on is False
+        assert data.boost_on is False
+        assert data.filter_alert is False
+
+    @pytest.mark.asyncio
+    async def test_read_error(self, client):
+        c, mock = client
+        mock.read_input_registers = AsyncMock(return_value=_make_error_result())
+        with pytest.raises(AirobotReadError):
+            await c.async_get_data()
+
+
+class TestWriteData:
+    @pytest.mark.asyncio
+    async def test_set_mode(self, client):
+        c, mock = client
+        mock.write_register = AsyncMock(return_value=_make_write_result())
+        await c.async_set_mode(OperatingMode.MANUAL)
+        mock.write_register.assert_awaited_once_with(
+            address=2000, value=2, device_id=1
+        )
+
+    @pytest.mark.asyncio
+    async def test_set_fan_speed(self, client):
+        c, mock = client
+        mock.write_register = AsyncMock(return_value=_make_write_result())
+        await c.async_set_fan_speed(7)
+        mock.write_register.assert_awaited_once_with(
+            address=2005, value=7, device_id=1
+        )
+
+    @pytest.mark.asyncio
+    async def test_set_fan_speed_out_of_range(self, client):
+        c, mock = client
+        with pytest.raises(AirobotWriteError, match="out of range"):
+            await c.async_set_fan_speed(15)
+
+    @pytest.mark.asyncio
+    async def test_set_humidity_setpoint(self, client):
+        c, mock = client
+        mock.write_register = AsyncMock(return_value=_make_write_result())
+        await c.async_set_humidity_setpoint(65.0)
+        mock.write_register.assert_awaited_once_with(
+            address=2003, value=650, device_id=1
+        )
+
+    @pytest.mark.asyncio
+    async def test_set_humidity_setpoint_out_of_range(self, client):
+        c, mock = client
+        with pytest.raises(AirobotWriteError, match="out of range"):
+            await c.async_set_humidity_setpoint(99.0)  # 990 > 950
+
+    @pytest.mark.asyncio
+    async def test_set_co2_setpoint(self, client):
+        c, mock = client
+        mock.write_register = AsyncMock(return_value=_make_write_result())
+        await c.async_set_co2_setpoint(1000)
+        mock.write_register.assert_awaited_once_with(
+            address=2004, value=1000, device_id=1
+        )
+
+    @pytest.mark.asyncio
+    async def test_set_power(self, client):
+        c, mock = client
+        mock.write_coil = AsyncMock(return_value=_make_write_result())
+        await c.async_set_power(False)
+        mock.write_coil.assert_awaited_once_with(
+            address=4000, value=False, device_id=1
+        )
+
+    @pytest.mark.asyncio
+    async def test_set_boost(self, client):
+        c, mock = client
+        mock.write_coil = AsyncMock(return_value=_make_write_result())
+        await c.async_set_boost(True)
+        mock.write_coil.assert_awaited_once_with(
+            address=4004, value=True, device_id=1
+        )
+
+    @pytest.mark.asyncio
+    async def test_reboot(self, client):
+        c, mock = client
+        mock.write_coil = AsyncMock(return_value=_make_write_result())
+        await c.async_reboot()
+        mock.write_coil.assert_awaited_once_with(
+            address=4006, value=True, device_id=1
+        )
+
+    @pytest.mark.asyncio
+    async def test_write_error(self, client):
+        c, mock = client
+        mock.write_register = AsyncMock(return_value=_make_error_result())
+        with pytest.raises(AirobotWriteError):
+            await c.async_set_mode(OperatingMode.AUTOMATIC)
+
+
+class TestHelpers:
+    def test_combine_u32(self):
+        assert AirobotModbusClient._combine_u32([0x0001, 0x0000], 0) == 65536
+        assert AirobotModbusClient._combine_u32([0xFFFF, 0xFFFF], 0) == 4294967295
+        assert AirobotModbusClient._combine_u32([0, 0], 0) == 0
+
+    def test_to_signed16(self):
+        assert AirobotModbusClient._to_signed16(0) == 0
+        assert AirobotModbusClient._to_signed16(100) == 100
+        assert AirobotModbusClient._to_signed16(65526) == -10
+        assert AirobotModbusClient._to_signed16(0x8000) == -32768
+        assert AirobotModbusClient._to_signed16(0x7FFF) == 32767
+
+    def test_scale_temp(self):
+        assert AirobotModbusClient._scale_temp(215) == pytest.approx(21.5)
+        assert AirobotModbusClient._scale_temp(-10) == pytest.approx(-1.0)
+        assert AirobotModbusClient._scale_temp(0) == pytest.approx(0.0)
