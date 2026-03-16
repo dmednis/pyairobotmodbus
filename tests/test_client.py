@@ -12,6 +12,7 @@ from pyairobotmodbus.exceptions import (
     AirobotConnectionError,
     AirobotInvalidDataError,
     AirobotReadError,
+    AirobotTimeoutError,
     AirobotWriteError,
 )
 from pyairobotmodbus.models import ErrorFlag, OperatingMode
@@ -356,3 +357,40 @@ class TestRegisterValidation:
         )
         with pytest.raises(AirobotInvalidDataError, match="Expected 1.*got 3"):
             await c.async_get_data()
+
+
+class TestEnhancedErrorHandling:
+    @pytest.mark.asyncio
+    async def test_connect_timeout(self, client: Any) -> None:
+        c, mock = client
+        mock.connect = AsyncMock(side_effect=TimeoutError("timed out"))
+        with pytest.raises(AirobotTimeoutError):
+            await c.connect()
+
+    @pytest.mark.asyncio
+    async def test_connect_os_error(self, client: Any) -> None:
+        c, mock = client
+        mock.connect = AsyncMock(side_effect=OSError("network unreachable"))
+        with pytest.raises(AirobotConnectionError):
+            await c.connect()
+
+    @pytest.mark.asyncio
+    async def test_read_timeout(self, client: Any) -> None:
+        c, mock = client
+        mock.read_input_registers = AsyncMock(side_effect=TimeoutError("read timeout"))
+        with pytest.raises(AirobotTimeoutError):
+            await c.async_get_data()
+
+    @pytest.mark.asyncio
+    async def test_write_timeout(self, client: Any) -> None:
+        c, mock = client
+        mock.write_register = AsyncMock(side_effect=TimeoutError("write timeout"))
+        with pytest.raises(AirobotTimeoutError):
+            await c.async_set_mode(OperatingMode.MANUAL)
+
+    @pytest.mark.asyncio
+    async def test_write_coil_timeout(self, client: Any) -> None:
+        c, mock = client
+        mock.write_coil = AsyncMock(side_effect=TimeoutError("write timeout"))
+        with pytest.raises(AirobotTimeoutError):
+            await c.async_set_power(True)

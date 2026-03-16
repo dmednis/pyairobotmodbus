@@ -11,6 +11,7 @@ from .exceptions import (
     AirobotConnectionError,
     AirobotInvalidDataError,
     AirobotReadError,
+    AirobotTimeoutError,
     AirobotWriteError,
 )
 from .models import AirobotData, ErrorFlag, OperatingMode
@@ -102,7 +103,15 @@ class AirobotModbusClient:
         """Connect to the device."""
         try:
             ok = await self._client.connect()
-        except Exception as exc:
+        except TimeoutError as exc:
+            raise AirobotTimeoutError(
+                f"Timeout connecting to {self._host}:{self._port}: {exc}"
+            ) from exc
+        except OSError as exc:
+            raise AirobotConnectionError(
+                f"Failed to connect to {self._host}:{self._port}: {exc}"
+            ) from exc
+        except ModbusException as exc:
             raise AirobotConnectionError(
                 f"Failed to connect to {self._host}:{self._port}: {exc}"
             ) from exc
@@ -131,6 +140,10 @@ class AirobotModbusClient:
             result = await self._client.read_input_registers(
                 address=address, count=count, device_id=self._device_id
             )
+        except TimeoutError as exc:
+            raise AirobotTimeoutError(
+                f"Timeout reading register {address}: {exc}"
+            ) from exc
         except ModbusException as exc:
             raise AirobotConnectionError(
                 f"Communication error reading input register {address}: {exc}"
@@ -150,6 +163,10 @@ class AirobotModbusClient:
             result = await self._client.read_holding_registers(
                 address=address, count=count, device_id=self._device_id
             )
+        except TimeoutError as exc:
+            raise AirobotTimeoutError(
+                f"Timeout reading register {address}: {exc}"
+            ) from exc
         except ModbusException as exc:
             raise AirobotConnectionError(
                 f"Communication error reading register {address}: {exc}"
@@ -167,6 +184,10 @@ class AirobotModbusClient:
             result = await self._client.read_coils(
                 address=address, count=count, device_id=self._device_id
             )
+        except TimeoutError as exc:
+            raise AirobotTimeoutError(
+                f"Timeout reading register {address}: {exc}"
+            ) from exc
         except ModbusException as exc:
             raise AirobotConnectionError(
                 f"Communication error reading coil {address}: {exc}"
@@ -355,6 +376,10 @@ class AirobotModbusClient:
             result = await self._client.write_register(
                 address=address, value=value, device_id=self._device_id
             )
+        except TimeoutError as exc:
+            raise AirobotTimeoutError(
+                f"Timeout writing register {address}: {exc}"
+            ) from exc
         except ModbusException as exc:
             raise AirobotConnectionError(
                 f"Communication error writing register {address}: {exc}"
@@ -371,6 +396,8 @@ class AirobotModbusClient:
             result = await self._client.write_coil(
                 address=address, value=value, device_id=self._device_id
             )
+        except TimeoutError as exc:
+            raise AirobotTimeoutError(f"Timeout writing coil {address}: {exc}") from exc
         except ModbusException as exc:
             raise AirobotConnectionError(
                 f"Communication error writing coil {address}: {exc}"
