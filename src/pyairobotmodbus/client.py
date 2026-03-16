@@ -7,7 +7,12 @@ import logging
 from pymodbus import ModbusException
 from pymodbus.client import AsyncModbusTcpClient
 
-from .exceptions import AirobotConnectionError, AirobotReadError, AirobotWriteError
+from .exceptions import (
+    AirobotConnectionError,
+    AirobotInvalidDataError,
+    AirobotReadError,
+    AirobotWriteError,
+)
 from .models import AirobotData, ErrorFlag, OperatingMode
 from .registers import (
     COIL_BLOCK_1,
@@ -52,6 +57,14 @@ _LOGGER = logging.getLogger(__name__)
 DEFAULT_PORT = 502
 DEFAULT_DEVICE_ID = 1
 DEFAULT_TIMEOUT = 10
+
+
+def _validate_register_count(name: str, registers: list[int], expected: int) -> None:
+    """Raise AirobotInvalidDataError if register count doesn't match."""
+    if len(registers) != expected:
+        raise AirobotInvalidDataError(
+            f"Expected {expected} registers for {name}, got {len(registers)}"
+        )
 
 
 class AirobotModbusClient:
@@ -126,7 +139,9 @@ class AirobotModbusClient:
             raise AirobotReadError(
                 f"Modbus error reading input register {address}: {result}"
             )
-        return list(result.registers)
+        registers = list(result.registers)
+        _validate_register_count(f"input@{address}", registers, count)
+        return registers
 
     async def _read_holding(self, address: int, count: int) -> list[int]:
         """Read holding registers (FC03) and return raw values."""
@@ -141,7 +156,9 @@ class AirobotModbusClient:
             ) from exc
         if result.isError():
             raise AirobotReadError(f"Modbus error reading register {address}: {result}")
-        return list(result.registers)
+        registers = list(result.registers)
+        _validate_register_count(f"holding@{address}", registers, count)
+        return registers
 
     async def _read_coils(self, address: int, count: int) -> list[bool]:
         """Read coils and return boolean values."""

@@ -10,6 +10,7 @@ import pytest
 from pyairobotmodbus.client import AirobotModbusClient
 from pyairobotmodbus.exceptions import (
     AirobotConnectionError,
+    AirobotInvalidDataError,
     AirobotReadError,
     AirobotWriteError,
 )
@@ -323,3 +324,35 @@ class TestHelpers:
         assert AirobotModbusClient._scale_temp(215) == pytest.approx(21.5)
         assert AirobotModbusClient._scale_temp(-10) == pytest.approx(-1.0)
         assert AirobotModbusClient._scale_temp(0) == pytest.approx(0.0)
+
+
+class TestRegisterValidation:
+    @pytest.mark.asyncio
+    async def test_input_register_count_mismatch(self, client: Any) -> None:
+        c, mock = client
+        # Return 5 registers when 12 expected (SENSOR_BLOCK_1)
+        mock.read_input_registers = AsyncMock(
+            return_value=_make_register_result([0, 0, 0, 0, 0])
+        )
+        with pytest.raises(AirobotInvalidDataError, match="Expected 12.*got 5"):
+            await c.async_get_data()
+
+    @pytest.mark.asyncio
+    async def test_holding_register_count_mismatch(self, client: Any) -> None:
+        c, mock = client
+        # Input registers return correct data
+        mock.read_input_registers = AsyncMock(
+            side_effect=[
+                _make_register_result([0] * 12),
+                _make_register_result([0] * 6),
+                _make_register_result([0] * 4),
+                _make_register_result([0] * 4),
+                _make_register_result([0] * 2),
+            ]
+        )
+        # First holding register read returns wrong count
+        mock.read_holding_registers = AsyncMock(
+            return_value=_make_register_result([0, 0, 0])  # expected 1
+        )
+        with pytest.raises(AirobotInvalidDataError, match="Expected 1.*got 3"):
+            await c.async_get_data()
