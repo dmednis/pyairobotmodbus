@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from conftest import (
+    make_coil_result,
+    make_error_result,
+    make_register_result,
+    make_write_result,
+)
 
 from pyairobotmodbus.client import AirobotModbusClient
 from pyairobotmodbus.exceptions import (
@@ -18,87 +24,45 @@ from pyairobotmodbus.exceptions import (
 from pyairobotmodbus.models import ErrorFlag, OperatingMode
 
 
-def _make_register_result(registers: list[int]) -> MagicMock:
-    """Create a mock Modbus register response."""
-    result = MagicMock()
-    result.isError.return_value = False
-    result.registers = registers
-    return result
-
-
-def _make_coil_result(bits: list[bool]) -> MagicMock:
-    """Create a mock Modbus coil response."""
-    result = MagicMock()
-    result.isError.return_value = False
-    # pad to 16 bits like real responses
-    result.bits = bits + [False] * (16 - len(bits))
-    return result
-
-
-def _make_error_result() -> MagicMock:
-    """Create a mock Modbus error response."""
-    result = MagicMock()
-    result.isError.return_value = True
-    result.configure_mock(**{"__str__": MagicMock(return_value="Modbus Error")})
-    return result
-
-
-def _make_write_result() -> MagicMock:
-    """Create a mock successful write response."""
-    result = MagicMock()
-    result.isError.return_value = False
-    return result
-
-
-@pytest.fixture
-def client() -> Any:
-    """Create a client with a mocked underlying pymodbus client."""
-    with patch("pyairobotmodbus.client.AsyncModbusTcpClient") as mock_cls:
-        mock_modbus = AsyncMock()
-        mock_modbus.connected = True
-        mock_modbus.connect = AsyncMock(return_value=True)
-        mock_cls.return_value = mock_modbus
-        c = AirobotModbusClient("192.168.1.100")
-        yield c, mock_modbus
-
-
 class TestConnection:
     @pytest.mark.asyncio
-    async def test_connect_success(self, client: Any) -> None:
-        c, mock = client
+    async def test_connect_success(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
         await c.connect()
         mock.connect.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_connect_failure(self, client: Any) -> None:
-        c, mock = client
+    async def test_connect_failure(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
         mock.connect.return_value = False
         with pytest.raises(AirobotConnectionError):
             await c.connect()
 
     @pytest.mark.asyncio
-    async def test_disconnect(self, client: Any) -> None:
-        c, mock = client
+    async def test_disconnect(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
         await c.disconnect()
         mock.close.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_read_when_not_connected(self, client: Any) -> None:
-        c, mock = client
+    async def test_read_when_not_connected(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
         mock.connected = False
         with pytest.raises(AirobotConnectionError, match="Not connected"):
             await c.async_get_data()
 
     @pytest.mark.asyncio
-    async def test_write_register_when_not_connected(self, client: Any) -> None:
-        c, mock = client
+    async def test_write_register_when_not_connected(
+        self, mock_modbus_client: Any
+    ) -> None:
+        c, mock = mock_modbus_client
         mock.connected = False
         with pytest.raises(AirobotConnectionError, match="Not connected"):
             await c.async_set_mode(OperatingMode.MANUAL)
 
     @pytest.mark.asyncio
-    async def test_write_coil_when_not_connected(self, client: Any) -> None:
-        c, mock = client
+    async def test_write_coil_when_not_connected(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
         mock.connected = False
         with pytest.raises(AirobotConnectionError, match="Not connected"):
             await c.async_set_power(True)
@@ -106,8 +70,8 @@ class TestConnection:
 
 class TestReadData:
     @pytest.mark.asyncio
-    async def test_async_get_data(self, client: Any) -> None:
-        c, mock = client
+    async def test_async_get_data(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
 
         # Sensor block 1: 1000-1011 (12 registers)
         # firmware=300, temps=215,220,50,-10,0, humidity=650,600,800,400,0, co2=450
@@ -154,23 +118,23 @@ class TestReadData:
         # Sensor blocks use input registers (FC04)
         mock.read_input_registers = AsyncMock(
             side_effect=[
-                _make_register_result(s1),
-                _make_register_result(s2),
-                _make_register_result(s3),
-                _make_register_result(s4),
-                _make_register_result(s5),
+                make_register_result(s1),
+                make_register_result(s2),
+                make_register_result(s3),
+                make_register_result(s4),
+                make_register_result(s5),
             ]
         )
 
         # Settings blocks use holding registers (FC03)
         mock.read_holding_registers = AsyncMock(
             side_effect=[
-                _make_register_result(r1),
-                _make_register_result(r2),
-                _make_register_result(r3),
-                _make_register_result(r4),
-                _make_register_result(r5),
-                _make_register_result(r6),
+                make_register_result(r1),
+                make_register_result(r2),
+                make_register_result(r3),
+                make_register_result(r4),
+                make_register_result(r5),
+                make_register_result(r6),
             ]
         )
 
@@ -182,10 +146,10 @@ class TestReadData:
 
         mock.read_coils = AsyncMock(
             side_effect=[
-                _make_coil_result(c1),
-                _make_coil_result(c2),
-                _make_coil_result(c3),
-                _make_coil_result(c4),
+                make_coil_result(c1),
+                make_coil_result(c2),
+                make_coil_result(c3),
+                make_coil_result(c4),
             ]
         )
 
@@ -227,83 +191,85 @@ class TestReadData:
         assert data.filter_alert is False
 
     @pytest.mark.asyncio
-    async def test_read_error(self, client: Any) -> None:
-        c, mock = client
-        mock.read_input_registers = AsyncMock(return_value=_make_error_result())
+    async def test_read_error(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
+        mock.read_input_registers = AsyncMock(return_value=make_error_result())
         with pytest.raises(AirobotReadError):
             await c.async_get_data()
 
 
 class TestWriteData:
     @pytest.mark.asyncio
-    async def test_set_mode(self, client: Any) -> None:
-        c, mock = client
-        mock.write_register = AsyncMock(return_value=_make_write_result())
+    async def test_set_mode(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
+        mock.write_register = AsyncMock(return_value=make_write_result())
         await c.async_set_mode(OperatingMode.MANUAL)
         mock.write_register.assert_awaited_once_with(address=2000, value=2, device_id=1)
 
     @pytest.mark.asyncio
-    async def test_set_fan_speed(self, client: Any) -> None:
-        c, mock = client
-        mock.write_register = AsyncMock(return_value=_make_write_result())
+    async def test_set_fan_speed(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
+        mock.write_register = AsyncMock(return_value=make_write_result())
         await c.async_set_fan_speed(7)
         mock.write_register.assert_awaited_once_with(address=2005, value=7, device_id=1)
 
     @pytest.mark.asyncio
-    async def test_set_fan_speed_out_of_range(self, client: Any) -> None:
-        c, mock = client
+    async def test_set_fan_speed_out_of_range(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
         with pytest.raises(AirobotWriteError, match="out of range"):
             await c.async_set_fan_speed(15)
 
     @pytest.mark.asyncio
-    async def test_set_humidity_setpoint(self, client: Any) -> None:
-        c, mock = client
-        mock.write_register = AsyncMock(return_value=_make_write_result())
+    async def test_set_humidity_setpoint(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
+        mock.write_register = AsyncMock(return_value=make_write_result())
         await c.async_set_humidity_setpoint(65.0)
         mock.write_register.assert_awaited_once_with(
             address=2003, value=650, device_id=1
         )
 
     @pytest.mark.asyncio
-    async def test_set_humidity_setpoint_out_of_range(self, client: Any) -> None:
-        c, mock = client
+    async def test_set_humidity_setpoint_out_of_range(
+        self, mock_modbus_client: Any
+    ) -> None:
+        c, mock = mock_modbus_client
         with pytest.raises(AirobotWriteError, match="out of range"):
             await c.async_set_humidity_setpoint(99.0)  # 990 > 950
 
     @pytest.mark.asyncio
-    async def test_set_co2_setpoint(self, client: Any) -> None:
-        c, mock = client
-        mock.write_register = AsyncMock(return_value=_make_write_result())
+    async def test_set_co2_setpoint(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
+        mock.write_register = AsyncMock(return_value=make_write_result())
         await c.async_set_co2_setpoint(1000)
         mock.write_register.assert_awaited_once_with(
             address=2004, value=1000, device_id=1
         )
 
     @pytest.mark.asyncio
-    async def test_set_power(self, client: Any) -> None:
-        c, mock = client
-        mock.write_coil = AsyncMock(return_value=_make_write_result())
+    async def test_set_power(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
+        mock.write_coil = AsyncMock(return_value=make_write_result())
         await c.async_set_power(False)
         mock.write_coil.assert_awaited_once_with(address=4000, value=False, device_id=1)
 
     @pytest.mark.asyncio
-    async def test_set_boost(self, client: Any) -> None:
-        c, mock = client
-        mock.write_coil = AsyncMock(return_value=_make_write_result())
+    async def test_set_boost(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
+        mock.write_coil = AsyncMock(return_value=make_write_result())
         await c.async_set_boost(True)
         mock.write_coil.assert_awaited_once_with(address=4004, value=True, device_id=1)
 
     @pytest.mark.asyncio
-    async def test_reboot(self, client: Any) -> None:
-        c, mock = client
-        mock.write_coil = AsyncMock(return_value=_make_write_result())
+    async def test_reboot(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
+        mock.write_coil = AsyncMock(return_value=make_write_result())
         await c.async_reboot()
         mock.write_coil.assert_awaited_once_with(address=4006, value=True, device_id=1)
 
     @pytest.mark.asyncio
-    async def test_write_error(self, client: Any) -> None:
-        c, mock = client
-        mock.write_register = AsyncMock(return_value=_make_error_result())
+    async def test_write_error(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
+        mock.write_register = AsyncMock(return_value=make_error_result())
         with pytest.raises(AirobotWriteError):
             await c.async_set_mode(OperatingMode.AUTOMATIC)
 
@@ -329,31 +295,33 @@ class TestHelpers:
 
 class TestRegisterValidation:
     @pytest.mark.asyncio
-    async def test_input_register_count_mismatch(self, client: Any) -> None:
-        c, mock = client
+    async def test_input_register_count_mismatch(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
         # Return 5 registers when 12 expected (SENSOR_BLOCK_1)
         mock.read_input_registers = AsyncMock(
-            return_value=_make_register_result([0, 0, 0, 0, 0])
+            return_value=make_register_result([0, 0, 0, 0, 0])
         )
         with pytest.raises(AirobotInvalidDataError, match="Expected 12.*got 5"):
             await c.async_get_data()
 
     @pytest.mark.asyncio
-    async def test_holding_register_count_mismatch(self, client: Any) -> None:
-        c, mock = client
+    async def test_holding_register_count_mismatch(
+        self, mock_modbus_client: Any
+    ) -> None:
+        c, mock = mock_modbus_client
         # Input registers return correct data
         mock.read_input_registers = AsyncMock(
             side_effect=[
-                _make_register_result([0] * 12),
-                _make_register_result([0] * 6),
-                _make_register_result([0] * 4),
-                _make_register_result([0] * 4),
-                _make_register_result([0] * 2),
+                make_register_result([0] * 12),
+                make_register_result([0] * 6),
+                make_register_result([0] * 4),
+                make_register_result([0] * 4),
+                make_register_result([0] * 2),
             ]
         )
         # First holding register read returns wrong count
         mock.read_holding_registers = AsyncMock(
-            return_value=_make_register_result([0, 0, 0])  # expected 1
+            return_value=make_register_result([0, 0, 0])  # expected 1
         )
         with pytest.raises(AirobotInvalidDataError, match="Expected 1.*got 3"):
             await c.async_get_data()
@@ -361,8 +329,8 @@ class TestRegisterValidation:
 
 class TestContextManager:
     @pytest.mark.asyncio
-    async def test_context_manager_happy_path(self, client: Any) -> None:
-        c, mock = client
+    async def test_context_manager_happy_path(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
         async with c:
             mock.connect.assert_awaited_once()
             assert c.connected
@@ -370,8 +338,10 @@ class TestContextManager:
         mock.close.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_context_manager_connect_failure(self, client: Any) -> None:
-        c, mock = client
+    async def test_context_manager_connect_failure(
+        self, mock_modbus_client: Any
+    ) -> None:
+        c, mock = mock_modbus_client
         mock.connect.return_value = False
         with pytest.raises(AirobotConnectionError):
             async with c:
@@ -380,8 +350,8 @@ class TestContextManager:
 
 class TestFactoryMethod:
     @pytest.mark.asyncio
-    async def test_create_success(self, client: Any) -> None:
-        _, mock = client
+    async def test_create_success(self, mock_modbus_client: Any) -> None:
+        _, mock = mock_modbus_client
         with patch("pyairobotmodbus.client.AsyncModbusTcpClient") as mock_cls:
             mock_modbus = AsyncMock()
             mock_modbus.connected = True
@@ -393,8 +363,8 @@ class TestFactoryMethod:
             assert c.host == "192.168.1.100"
 
     @pytest.mark.asyncio
-    async def test_create_failure(self, client: Any) -> None:
-        _, mock = client
+    async def test_create_failure(self, mock_modbus_client: Any) -> None:
+        _, mock = mock_modbus_client
         with patch("pyairobotmodbus.client.AsyncModbusTcpClient") as mock_cls:
             mock_modbus = AsyncMock()
             mock_modbus.connect = AsyncMock(return_value=False)
@@ -404,8 +374,8 @@ class TestFactoryMethod:
                 await AirobotModbusClient.create("192.168.1.100")
 
     @pytest.mark.asyncio
-    async def test_create_custom_params(self, client: Any) -> None:
-        _, mock = client
+    async def test_create_custom_params(self, mock_modbus_client: Any) -> None:
+        _, mock = mock_modbus_client
         with patch("pyairobotmodbus.client.AsyncModbusTcpClient") as mock_cls:
             mock_modbus = AsyncMock()
             mock_modbus.connected = True
@@ -421,36 +391,36 @@ class TestFactoryMethod:
 
 class TestEnhancedErrorHandling:
     @pytest.mark.asyncio
-    async def test_connect_timeout(self, client: Any) -> None:
-        c, mock = client
+    async def test_connect_timeout(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
         mock.connect = AsyncMock(side_effect=TimeoutError("timed out"))
         with pytest.raises(AirobotTimeoutError):
             await c.connect()
 
     @pytest.mark.asyncio
-    async def test_connect_os_error(self, client: Any) -> None:
-        c, mock = client
+    async def test_connect_os_error(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
         mock.connect = AsyncMock(side_effect=OSError("network unreachable"))
         with pytest.raises(AirobotConnectionError):
             await c.connect()
 
     @pytest.mark.asyncio
-    async def test_read_timeout(self, client: Any) -> None:
-        c, mock = client
+    async def test_read_timeout(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
         mock.read_input_registers = AsyncMock(side_effect=TimeoutError("read timeout"))
         with pytest.raises(AirobotTimeoutError):
             await c.async_get_data()
 
     @pytest.mark.asyncio
-    async def test_write_timeout(self, client: Any) -> None:
-        c, mock = client
+    async def test_write_timeout(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
         mock.write_register = AsyncMock(side_effect=TimeoutError("write timeout"))
         with pytest.raises(AirobotTimeoutError):
             await c.async_set_mode(OperatingMode.MANUAL)
 
     @pytest.mark.asyncio
-    async def test_write_coil_timeout(self, client: Any) -> None:
-        c, mock = client
+    async def test_write_coil_timeout(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
         mock.write_coil = AsyncMock(side_effect=TimeoutError("write timeout"))
         with pytest.raises(AirobotTimeoutError):
             await c.async_set_power(True)
