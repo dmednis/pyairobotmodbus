@@ -102,12 +102,18 @@ class AirobotModbusClient:
         """Disconnect from the device."""
         self._client.close()
 
+    def _ensure_connected(self) -> None:
+        """Raise if the client is not connected."""
+        if not self.connected:
+            raise AirobotConnectionError(f"Not connected to {self._host}:{self._port}")
+
     # ------------------------------------------------------------------
     # Reading data
     # ------------------------------------------------------------------
 
     async def _read_input(self, address: int, count: int) -> list[int]:
         """Read input registers (FC04) and return raw values."""
+        self._ensure_connected()
         try:
             result = await self._client.read_input_registers(
                 address=address, count=count, device_id=self._device_id
@@ -124,6 +130,7 @@ class AirobotModbusClient:
 
     async def _read_holding(self, address: int, count: int) -> list[int]:
         """Read holding registers (FC03) and return raw values."""
+        self._ensure_connected()
         try:
             result = await self._client.read_holding_registers(
                 address=address, count=count, device_id=self._device_id
@@ -138,6 +145,7 @@ class AirobotModbusClient:
 
     async def _read_coils(self, address: int, count: int) -> list[bool]:
         """Read coils and return boolean values."""
+        self._ensure_connected()
         try:
             result = await self._client.read_coils(
                 address=address, count=count, device_id=self._device_id
@@ -318,6 +326,7 @@ class AirobotModbusClient:
 
     async def _write_register(self, address: int, value: int) -> None:
         """Write a single holding register with validation."""
+        self._ensure_connected()
         if address in LIMITS:
             min_val, max_val = LIMITS[address]
             if not min_val <= value <= max_val:
@@ -340,6 +349,7 @@ class AirobotModbusClient:
 
     async def _write_coil(self, address: int, value: bool) -> None:
         """Write a single coil."""
+        self._ensure_connected()
         try:
             result = await self._client.write_coil(
                 address=address, value=value, device_id=self._device_id

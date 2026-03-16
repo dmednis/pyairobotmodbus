@@ -80,6 +80,27 @@ class TestConnection:
         await c.disconnect()
         mock.close.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_read_when_not_connected(self, client: Any) -> None:
+        c, mock = client
+        mock.connected = False
+        with pytest.raises(AirobotConnectionError, match="Not connected"):
+            await c.async_get_data()
+
+    @pytest.mark.asyncio
+    async def test_write_register_when_not_connected(self, client: Any) -> None:
+        c, mock = client
+        mock.connected = False
+        with pytest.raises(AirobotConnectionError, match="Not connected"):
+            await c.async_set_mode(OperatingMode.MANUAL)
+
+    @pytest.mark.asyncio
+    async def test_write_coil_when_not_connected(self, client: Any) -> None:
+        c, mock = client
+        mock.connected = False
+        with pytest.raises(AirobotConnectionError, match="Not connected"):
+            await c.async_set_power(True)
+
 
 class TestReadData:
     @pytest.mark.asyncio
