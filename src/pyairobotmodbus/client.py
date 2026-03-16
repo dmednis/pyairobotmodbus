@@ -88,6 +88,19 @@ class AirobotModbusClient:
             timeout=timeout,
         )
 
+    @classmethod
+    async def create(
+        cls,
+        host: str,
+        port: int = DEFAULT_PORT,
+        device_id: int = DEFAULT_DEVICE_ID,
+        timeout: int = DEFAULT_TIMEOUT,
+    ) -> Self:
+        """Create and connect a client instance."""
+        client = cls(host, port=port, device_id=device_id, timeout=timeout)
+        await client.connect()
+        return client
+
     @property
     def host(self) -> str:
         return self._host

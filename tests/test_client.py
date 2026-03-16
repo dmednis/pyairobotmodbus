@@ -378,6 +378,47 @@ class TestContextManager:
                 pass
 
 
+class TestFactoryMethod:
+    @pytest.mark.asyncio
+    async def test_create_success(self, client: Any) -> None:
+        _, mock = client
+        with patch("pyairobotmodbus.client.AsyncModbusTcpClient") as mock_cls:
+            mock_modbus = AsyncMock()
+            mock_modbus.connected = True
+            mock_modbus.connect = AsyncMock(return_value=True)
+            mock_cls.return_value = mock_modbus
+
+            c = await AirobotModbusClient.create("192.168.1.100")
+            mock_modbus.connect.assert_awaited_once()
+            assert c.host == "192.168.1.100"
+
+    @pytest.mark.asyncio
+    async def test_create_failure(self, client: Any) -> None:
+        _, mock = client
+        with patch("pyairobotmodbus.client.AsyncModbusTcpClient") as mock_cls:
+            mock_modbus = AsyncMock()
+            mock_modbus.connect = AsyncMock(return_value=False)
+            mock_cls.return_value = mock_modbus
+
+            with pytest.raises(AirobotConnectionError):
+                await AirobotModbusClient.create("192.168.1.100")
+
+    @pytest.mark.asyncio
+    async def test_create_custom_params(self, client: Any) -> None:
+        _, mock = client
+        with patch("pyairobotmodbus.client.AsyncModbusTcpClient") as mock_cls:
+            mock_modbus = AsyncMock()
+            mock_modbus.connected = True
+            mock_modbus.connect = AsyncMock(return_value=True)
+            mock_cls.return_value = mock_modbus
+
+            c = await AirobotModbusClient.create(
+                "10.0.0.1", port=5020, device_id=2, timeout=30
+            )
+            assert c.host == "10.0.0.1"
+            assert c.port == 5020
+
+
 class TestEnhancedErrorHandling:
     @pytest.mark.asyncio
     async def test_connect_timeout(self, client: Any) -> None:
