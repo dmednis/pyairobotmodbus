@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -36,7 +37,7 @@ def _make_error_result() -> MagicMock:
     """Create a mock Modbus error response."""
     result = MagicMock()
     result.isError.return_value = True
-    result.__str__ = lambda self: "Modbus Error"
+    result.configure_mock(**{"__str__": MagicMock(return_value="Modbus Error")})
     return result
 
 
@@ -48,7 +49,7 @@ def _make_write_result() -> MagicMock:
 
 
 @pytest.fixture
-def client():
+def client() -> Any:
     """Create a client with a mocked underlying pymodbus client."""
     with patch("pyairobotmodbus.client.AsyncModbusTcpClient") as mock_cls:
         mock_modbus = AsyncMock()
@@ -61,20 +62,20 @@ def client():
 
 class TestConnection:
     @pytest.mark.asyncio
-    async def test_connect_success(self, client):
+    async def test_connect_success(self, client: Any) -> None:
         c, mock = client
         await c.connect()
         mock.connect.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_connect_failure(self, client):
+    async def test_connect_failure(self, client: Any) -> None:
         c, mock = client
         mock.connect.return_value = False
         with pytest.raises(AirobotConnectionError):
             await c.connect()
 
     @pytest.mark.asyncio
-    async def test_disconnect(self, client):
+    async def test_disconnect(self, client: Any) -> None:
         c, mock = client
         await c.disconnect()
         mock.close.assert_called_once()
@@ -82,7 +83,7 @@ class TestConnection:
 
 class TestReadData:
     @pytest.mark.asyncio
-    async def test_async_get_data(self, client):
+    async def test_async_get_data(self, client: Any) -> None:
         c, mock = client
 
         # Sensor block 1: 1000-1011 (12 registers)
@@ -203,7 +204,7 @@ class TestReadData:
         assert data.filter_alert is False
 
     @pytest.mark.asyncio
-    async def test_read_error(self, client):
+    async def test_read_error(self, client: Any) -> None:
         c, mock = client
         mock.read_input_registers = AsyncMock(return_value=_make_error_result())
         with pytest.raises(AirobotReadError):
@@ -212,27 +213,27 @@ class TestReadData:
 
 class TestWriteData:
     @pytest.mark.asyncio
-    async def test_set_mode(self, client):
+    async def test_set_mode(self, client: Any) -> None:
         c, mock = client
         mock.write_register = AsyncMock(return_value=_make_write_result())
         await c.async_set_mode(OperatingMode.MANUAL)
         mock.write_register.assert_awaited_once_with(address=2000, value=2, device_id=1)
 
     @pytest.mark.asyncio
-    async def test_set_fan_speed(self, client):
+    async def test_set_fan_speed(self, client: Any) -> None:
         c, mock = client
         mock.write_register = AsyncMock(return_value=_make_write_result())
         await c.async_set_fan_speed(7)
         mock.write_register.assert_awaited_once_with(address=2005, value=7, device_id=1)
 
     @pytest.mark.asyncio
-    async def test_set_fan_speed_out_of_range(self, client):
+    async def test_set_fan_speed_out_of_range(self, client: Any) -> None:
         c, mock = client
         with pytest.raises(AirobotWriteError, match="out of range"):
             await c.async_set_fan_speed(15)
 
     @pytest.mark.asyncio
-    async def test_set_humidity_setpoint(self, client):
+    async def test_set_humidity_setpoint(self, client: Any) -> None:
         c, mock = client
         mock.write_register = AsyncMock(return_value=_make_write_result())
         await c.async_set_humidity_setpoint(65.0)
@@ -241,13 +242,13 @@ class TestWriteData:
         )
 
     @pytest.mark.asyncio
-    async def test_set_humidity_setpoint_out_of_range(self, client):
+    async def test_set_humidity_setpoint_out_of_range(self, client: Any) -> None:
         c, mock = client
         with pytest.raises(AirobotWriteError, match="out of range"):
             await c.async_set_humidity_setpoint(99.0)  # 990 > 950
 
     @pytest.mark.asyncio
-    async def test_set_co2_setpoint(self, client):
+    async def test_set_co2_setpoint(self, client: Any) -> None:
         c, mock = client
         mock.write_register = AsyncMock(return_value=_make_write_result())
         await c.async_set_co2_setpoint(1000)
@@ -256,28 +257,28 @@ class TestWriteData:
         )
 
     @pytest.mark.asyncio
-    async def test_set_power(self, client):
+    async def test_set_power(self, client: Any) -> None:
         c, mock = client
         mock.write_coil = AsyncMock(return_value=_make_write_result())
         await c.async_set_power(False)
         mock.write_coil.assert_awaited_once_with(address=4000, value=False, device_id=1)
 
     @pytest.mark.asyncio
-    async def test_set_boost(self, client):
+    async def test_set_boost(self, client: Any) -> None:
         c, mock = client
         mock.write_coil = AsyncMock(return_value=_make_write_result())
         await c.async_set_boost(True)
         mock.write_coil.assert_awaited_once_with(address=4004, value=True, device_id=1)
 
     @pytest.mark.asyncio
-    async def test_reboot(self, client):
+    async def test_reboot(self, client: Any) -> None:
         c, mock = client
         mock.write_coil = AsyncMock(return_value=_make_write_result())
         await c.async_reboot()
         mock.write_coil.assert_awaited_once_with(address=4006, value=True, device_id=1)
 
     @pytest.mark.asyncio
-    async def test_write_error(self, client):
+    async def test_write_error(self, client: Any) -> None:
         c, mock = client
         mock.write_register = AsyncMock(return_value=_make_error_result())
         with pytest.raises(AirobotWriteError):
@@ -285,19 +286,19 @@ class TestWriteData:
 
 
 class TestHelpers:
-    def test_combine_u32(self):
+    def test_combine_u32(self) -> None:
         assert AirobotModbusClient._combine_u32([0x0001, 0x0000], 0) == 65536
         assert AirobotModbusClient._combine_u32([0xFFFF, 0xFFFF], 0) == 4294967295
         assert AirobotModbusClient._combine_u32([0, 0], 0) == 0
 
-    def test_to_signed16(self):
+    def test_to_signed16(self) -> None:
         assert AirobotModbusClient._to_signed16(0) == 0
         assert AirobotModbusClient._to_signed16(100) == 100
         assert AirobotModbusClient._to_signed16(65526) == -10
         assert AirobotModbusClient._to_signed16(0x8000) == -32768
         assert AirobotModbusClient._to_signed16(0x7FFF) == 32767
 
-    def test_scale_temp(self):
+    def test_scale_temp(self) -> None:
         assert AirobotModbusClient._scale_temp(215) == pytest.approx(21.5)
         assert AirobotModbusClient._scale_temp(-10) == pytest.approx(-1.0)
         assert AirobotModbusClient._scale_temp(0) == pytest.approx(0.0)
