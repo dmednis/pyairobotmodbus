@@ -359,6 +359,25 @@ class TestRegisterValidation:
             await c.async_get_data()
 
 
+class TestContextManager:
+    @pytest.mark.asyncio
+    async def test_context_manager_happy_path(self, client: Any) -> None:
+        c, mock = client
+        async with c:
+            mock.connect.assert_awaited_once()
+            assert c.connected
+
+        mock.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_context_manager_connect_failure(self, client: Any) -> None:
+        c, mock = client
+        mock.connect.return_value = False
+        with pytest.raises(AirobotConnectionError):
+            async with c:
+                pass
+
+
 class TestEnhancedErrorHandling:
     @pytest.mark.asyncio
     async def test_connect_timeout(self, client: Any) -> None:

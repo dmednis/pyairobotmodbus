@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Self
 
 from pymodbus import ModbusException
 from pymodbus.client import AsyncModbusTcpClient
@@ -123,6 +124,20 @@ class AirobotModbusClient:
     async def disconnect(self) -> None:
         """Disconnect from the device."""
         self._client.close()
+
+    async def __aenter__(self) -> Self:
+        """Connect and return client for use as async context manager."""
+        await self.connect()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object,
+    ) -> None:
+        """Disconnect on context manager exit."""
+        await self.disconnect()
 
     def _ensure_connected(self) -> None:
         """Raise if the client is not connected."""
