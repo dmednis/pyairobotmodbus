@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
@@ -48,6 +48,7 @@ def mock_modbus_client() -> Any:
         mock_modbus = AsyncMock()
         mock_modbus.connected = True
         mock_modbus.connect = AsyncMock(return_value=True)
+        mock_modbus.close = Mock()  # pymodbus close() is synchronous
         mock_cls.return_value = mock_modbus
         c = AirobotModbusClient("192.168.1.100")
         yield c, mock_modbus

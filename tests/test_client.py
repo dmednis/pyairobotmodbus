@@ -602,6 +602,79 @@ class TestEnhancedErrorHandling:
         with pytest.raises(AirobotWriteError, match="Modbus error writing coil"):
             await c.async_set_power(True)
 
+    @pytest.mark.asyncio
+    async def test_read_input_os_error(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
+        mock.read_input_registers = AsyncMock(
+            side_effect=ConnectionResetError("connection reset")
+        )
+        with pytest.raises(AirobotConnectionError, match="Communication error"):
+            await c.async_get_data()
+
+    @pytest.mark.asyncio
+    async def test_read_holding_os_error(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
+        mock.read_input_registers = AsyncMock(
+            side_effect=[
+                make_register_result([0] * 12),
+                make_register_result([0] * 6),
+                make_register_result([0] * 4),
+                make_register_result([0] * 4),
+                make_register_result([0] * 2),
+            ]
+        )
+        mock.read_holding_registers = AsyncMock(
+            side_effect=ConnectionResetError("connection reset")
+        )
+        with pytest.raises(AirobotConnectionError, match="Communication error"):
+            await c.async_get_data()
+
+    @pytest.mark.asyncio
+    async def test_read_coils_os_error(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
+        mock.read_input_registers = AsyncMock(
+            side_effect=[
+                make_register_result([0] * 12),
+                make_register_result([0] * 6),
+                make_register_result([0] * 4),
+                make_register_result([0] * 4),
+                make_register_result([0] * 2),
+            ]
+        )
+        mock.read_holding_registers = AsyncMock(
+            side_effect=[
+                make_register_result([1]),
+                make_register_result([0] * 6),
+                make_register_result([0] * 6),
+                make_register_result([0] * 4),
+                make_register_result([0]),
+                make_register_result([0]),
+            ]
+        )
+        mock.read_coils = AsyncMock(
+            side_effect=ConnectionResetError("connection reset")
+        )
+        with pytest.raises(AirobotConnectionError, match="Communication error"):
+            await c.async_get_data()
+
+    @pytest.mark.asyncio
+    async def test_write_register_os_error(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
+        mock.write_register = AsyncMock(
+            side_effect=ConnectionResetError("connection reset")
+        )
+        with pytest.raises(AirobotConnectionError, match="Communication error"):
+            await c.async_set_mode(OperatingMode.MANUAL)
+
+    @pytest.mark.asyncio
+    async def test_write_coil_os_error(self, mock_modbus_client: Any) -> None:
+        c, mock = mock_modbus_client
+        mock.write_coil = AsyncMock(
+            side_effect=ConnectionResetError("connection reset")
+        )
+        with pytest.raises(AirobotConnectionError, match="Communication error"):
+            await c.async_set_power(True)
+
 
 class TestAllSetters:
     """Test each setter method to ensure full coverage."""

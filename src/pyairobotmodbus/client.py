@@ -172,6 +172,10 @@ class AirobotModbusClient:
             raise AirobotTimeoutError(
                 f"Timeout reading register {address}: {exc}"
             ) from exc
+        except OSError as exc:
+            raise AirobotConnectionError(
+                f"Communication error reading input register {address}: {exc}"
+            ) from exc
         except ModbusException as exc:
             raise AirobotConnectionError(
                 f"Communication error reading input register {address}: {exc}"
@@ -195,6 +199,10 @@ class AirobotModbusClient:
             raise AirobotTimeoutError(
                 f"Timeout reading register {address}: {exc}"
             ) from exc
+        except OSError as exc:
+            raise AirobotConnectionError(
+                f"Communication error reading register {address}: {exc}"
+            ) from exc
         except ModbusException as exc:
             raise AirobotConnectionError(
                 f"Communication error reading register {address}: {exc}"
@@ -215,6 +223,10 @@ class AirobotModbusClient:
         except TimeoutError as exc:
             raise AirobotTimeoutError(
                 f"Timeout reading register {address}: {exc}"
+            ) from exc
+        except OSError as exc:
+            raise AirobotConnectionError(
+                f"Communication error reading coil {address}: {exc}"
             ) from exc
         except ModbusException as exc:
             raise AirobotConnectionError(
@@ -408,6 +420,10 @@ class AirobotModbusClient:
             raise AirobotTimeoutError(
                 f"Timeout writing register {address}: {exc}"
             ) from exc
+        except OSError as exc:
+            raise AirobotConnectionError(
+                f"Communication error writing register {address}: {exc}"
+            ) from exc
         except ModbusException as exc:
             raise AirobotConnectionError(
                 f"Communication error writing register {address}: {exc}"
@@ -426,6 +442,10 @@ class AirobotModbusClient:
             )
         except TimeoutError as exc:
             raise AirobotTimeoutError(f"Timeout writing coil {address}: {exc}") from exc
+        except OSError as exc:
+            raise AirobotConnectionError(
+                f"Communication error writing coil {address}: {exc}"
+            ) from exc
         except ModbusException as exc:
             raise AirobotConnectionError(
                 f"Communication error writing coil {address}: {exc}"

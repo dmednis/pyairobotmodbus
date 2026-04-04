@@ -22,6 +22,11 @@ from pyairobotmodbus.exceptions import AirobotError
 from pyairobotmodbus.models import AirobotData, ErrorFlag, OperatingMode
 
 
+def _close_coro(coro: Any) -> None:
+    """Close coroutine to avoid 'coroutine was never awaited' warnings."""
+    coro.close()
+
+
 def _make_data(**overrides: Any) -> AirobotData:
     """Build an AirobotData with sensible defaults, allowing overrides."""
     defaults: dict[str, Any] = dict(
@@ -269,7 +274,9 @@ class TestMain:
     def test_main_read_command(self) -> None:
         with (
             patch("sys.argv", ["pyairobotmodbus", "read", "192.168.1.100"]),
-            patch("pyairobotmodbus.cli.asyncio.run") as mock_run,
+            patch(
+                "pyairobotmodbus.cli.asyncio.run", side_effect=_close_coro
+            ) as mock_run,
         ):
             main()
             mock_run.assert_called_once()
@@ -280,7 +287,9 @@ class TestMain:
                 "sys.argv",
                 ["pyairobotmodbus", "set", "192.168.1.100", "fan_speed", "7"],
             ),
-            patch("pyairobotmodbus.cli.asyncio.run") as mock_run,
+            patch(
+                "pyairobotmodbus.cli.asyncio.run", side_effect=_close_coro
+            ) as mock_run,
         ):
             main()
             mock_run.assert_called_once()
@@ -297,7 +306,9 @@ class TestMain:
                     "2",
                 ],
             ),
-            patch("pyairobotmodbus.cli.asyncio.run") as mock_run,
+            patch(
+                "pyairobotmodbus.cli.asyncio.run", side_effect=_close_coro
+            ) as mock_run,
         ):
             main()
             mock_run.assert_called_once()
@@ -308,28 +319,38 @@ class TestMain:
                 "sys.argv",
                 ["pyairobotmodbus", "--port", "5020", "read", "10.0.0.1"],
             ),
-            patch("pyairobotmodbus.cli.asyncio.run") as mock_run,
+            patch(
+                "pyairobotmodbus.cli.asyncio.run", side_effect=_close_coro
+            ) as mock_run,
         ):
             main()
             mock_run.assert_called_once()
 
     def test_main_keyboard_interrupt(self) -> None:
+        def _close_and_raise(coro: Any) -> None:
+            coro.close()
+            raise KeyboardInterrupt
+
         with (
             patch("sys.argv", ["pyairobotmodbus", "read", "192.168.1.100"]),
             patch(
                 "pyairobotmodbus.cli.asyncio.run",
-                side_effect=KeyboardInterrupt,
+                side_effect=_close_and_raise,
             ),
         ):
             # Should not raise, just pass silently
             main()
 
     def test_main_airobot_error(self) -> None:
+        def _close_and_raise(coro: Any) -> None:
+            coro.close()
+            raise AirobotError("test error")
+
         with (
             patch("sys.argv", ["pyairobotmodbus", "read", "192.168.1.100"]),
             patch(
                 "pyairobotmodbus.cli.asyncio.run",
-                side_effect=AirobotError("test error"),
+                side_effect=_close_and_raise,
             ),
             patch("builtins.print"),
             pytest.raises(SystemExit, match="1"),
@@ -377,13 +398,16 @@ class TestMainModule:
 
 
 class TestCliIfNameMain:
+    @pytest.mark.filterwarnings("ignore:.*found in sys.modules.*:RuntimeWarning")
     def test_cli_module_name_main(self) -> None:
         """Cover the `if __name__ == '__main__': main()` guard in cli.py."""
         import runpy
 
         with (
             patch("sys.argv", ["pyairobotmodbus", "read", "192.168.1.100"]),
-            patch("pyairobotmodbus.cli.asyncio.run") as mock_run,
+            patch(
+                "pyairobotmodbus.cli.asyncio.run", side_effect=_close_coro
+            ) as mock_run,
         ):
             runpy.run_module(
                 "pyairobotmodbus.cli", run_name="__main__", alter_sys=False
