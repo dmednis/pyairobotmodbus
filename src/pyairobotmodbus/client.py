@@ -234,7 +234,12 @@ class AirobotModbusClient:
             ) from exc
         if result.isError():
             raise AirobotReadError(f"Modbus error reading coil {address}: {result}")
-        return list(result.bits[:count])
+        bits = list(result.bits[:count])
+        if len(bits) != count:
+            raise AirobotInvalidDataError(
+                f"Expected {count} coils for coil@{address}, got {len(bits)}"
+            )
+        return bits
 
     @staticmethod
     def _combine_u32(regs: list[int], offset: int) -> int:

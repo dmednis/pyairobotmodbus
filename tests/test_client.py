@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from conftest import (
@@ -325,6 +325,39 @@ class TestRegisterValidation:
             return_value=make_register_result([0, 0, 0])  # expected 1
         )
         with pytest.raises(AirobotInvalidDataError, match="Expected 1.*got 3"):
+            await c.async_get_data()
+
+    @pytest.mark.asyncio
+    async def test_coil_count_mismatch(self, mock_modbus_client: Any) -> None:
+        """Short coil responses must raise AirobotInvalidDataError, not IndexError."""
+        c, mock = mock_modbus_client
+        # Input and holding registers return correct data
+        mock.read_input_registers = AsyncMock(
+            side_effect=[
+                make_register_result([0] * 12),
+                make_register_result([0] * 6),
+                make_register_result([0] * 4),
+                make_register_result([0] * 4),
+                make_register_result([0] * 2),
+            ]
+        )
+        mock.read_holding_registers = AsyncMock(
+            side_effect=[
+                make_register_result([1]),  # SETTINGS_BLOCK_1 (1 reg)
+                make_register_result([0] * 6),  # SETTINGS_BLOCK_2
+                make_register_result([0] * 6),  # SETTINGS_BLOCK_3
+                make_register_result([0] * 4),  # SETTINGS_BLOCK_4
+                make_register_result([0]),  # SETTINGS_BLOCK_5
+                make_register_result([0]),  # SETTINGS_BLOCK_6
+            ]
+        )
+        # First coil read returns too few bits (expected 7 for COIL_BLOCK_1)
+        # Use raw mock (not make_coil_result) to avoid padding to 16 bits
+        short_coil = MagicMock()
+        short_coil.isError.return_value = False
+        short_coil.bits = [True, False]  # only 2 bits, no padding
+        mock.read_coils = AsyncMock(return_value=short_coil)
+        with pytest.raises(AirobotInvalidDataError, match="Expected 7.*got 2"):
             await c.async_get_data()
 
 

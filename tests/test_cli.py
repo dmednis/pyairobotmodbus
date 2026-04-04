@@ -84,8 +84,14 @@ class TestParseBool:
             assert _parse_bool(v) is True
 
     def test_false_values(self) -> None:
-        for v in ("0", "false", "off", "no", "whatever"):
+        for v in ("0", "false", "off", "False", "OFF", "FALSE"):
             assert _parse_bool(v) is False
+
+    def test_invalid_value_raises(self) -> None:
+        """Invalid boolean strings must raise ValueError, not silently return False."""
+        for v in ("wat", "yes", "no", "maybe", "2", ""):
+            with pytest.raises(ValueError, match="Invalid boolean"):
+                _parse_bool(v)
 
 
 class TestFormatData:
@@ -357,6 +363,27 @@ class TestMain:
         ):
             main()
 
+    def test_main_set_bad_value_exits_cleanly(self) -> None:
+        """Bad converter values must produce clean exit, not traceback."""
+
+        def _run_and_raise(coro: Any) -> None:
+            coro.close()
+            raise ValueError("invalid literal for int()")
+
+        with (
+            patch(
+                "sys.argv",
+                ["pyairobotmodbus", "set", "192.168.1.100", "fan_speed", "abc"],
+            ),
+            patch(
+                "pyairobotmodbus.cli.asyncio.run",
+                side_effect=_run_and_raise,
+            ),
+            patch("builtins.print"),
+            pytest.raises(SystemExit, match="1"),
+        ):
+            main()
+
     def test_main_no_command(self) -> None:
         with (
             patch("sys.argv", ["pyairobotmodbus"]),
@@ -377,6 +404,20 @@ class TestSettersDict:
         assert converter is not None
         assert converter("automatic") == OperatingMode.AUTOMATIC
         assert converter("MANUAL") == OperatingMode.MANUAL
+
+    def test_mode_converter_accepts_short_names(self) -> None:
+        """Help text says auto|manual, so those must work."""
+        _, converter, _ = SETTERS["mode"]
+        assert converter is not None
+        assert converter("auto") == OperatingMode.AUTOMATIC
+        assert converter("manual") == OperatingMode.MANUAL
+
+    def test_mode_converter_invalid_raises_airobot_error(self) -> None:
+        """Invalid mode values must raise a clean error, not raw KeyError."""
+        _, converter, _ = SETTERS["mode"]
+        assert converter is not None
+        with pytest.raises((ValueError, AirobotError)):
+            converter("turbo")
 
 
 class TestMainModule:

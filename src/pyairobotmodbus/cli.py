@@ -15,7 +15,12 @@ from .models import AirobotData, ErrorFlag, OperatingMode
 
 def _parse_bool(v: str) -> bool:
     """Parse a string to bool for CLI boolean arguments."""
-    return v.lower() in ("1", "true", "on")
+    low = v.lower()
+    if low in ("1", "true", "on"):
+        return True
+    if low in ("0", "false", "off"):
+        return False
+    raise ValueError(f"Invalid boolean value: {v!r} (expected on/off, true/false, 1/0)")
 
 
 def _format_data(data: AirobotData) -> str:
@@ -99,10 +104,28 @@ def _format_data(data: AirobotData) -> str:
 # converter transforms a CLI string into the argument for the method.
 _Converter = Callable[[str], Any]
 
+_MODE_ALIASES: dict[str, str] = {
+    "auto": "AUTOMATIC",
+    "manual": "MANUAL",
+}
+
+
+def _parse_mode(v: str) -> OperatingMode:
+    """Parse a mode string, accepting both full enum names and short aliases."""
+    key = _MODE_ALIASES.get(v.lower(), v.upper())
+    try:
+        return OperatingMode[key]
+    except KeyError:
+        valid = ", ".join(
+            sorted({*_MODE_ALIASES, *(m.name.lower() for m in OperatingMode)})
+        )
+        raise ValueError(f"Invalid mode: {v!r} (expected {valid})") from None
+
+
 SETTERS: dict[str, tuple[str, _Converter | None, str]] = {
     "mode": (
         "async_set_mode",
-        lambda v: OperatingMode[v.upper()],
+        _parse_mode,
         "auto|manual",
     ),
     "fan_speed": ("async_set_fan_speed", int, "0-10"),
@@ -251,6 +274,9 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
     except AirobotError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except (ValueError, KeyError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
