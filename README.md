@@ -10,29 +10,90 @@ pip install pyairobotmodbus
 
 ## Usage
 
+### Context manager (recommended)
+
 ```python
 import asyncio
 from pyairobotmodbus import AirobotModbusClient, OperatingMode
 
 async def main():
-    client = AirobotModbusClient("192.168.1.100")
-    await client.connect()
+    async with AirobotModbusClient("192.168.1.100") as client:
+        data = await client.async_get_data()
+        print(f"Supply air: {data.supply_air_temp}°C")
+        print(f"CO2: {data.co2_level} ppm")
 
-    # Read all data
-    data = await client.async_get_data()
-    print(f"Supply air: {data.supply_air_temp}°C")
-    print(f"Extract air: {data.extract_air_temp}°C")
-    print(f"CO2: {data.co2_level} ppm")
-    print(f"Fan level: {data.supply_fan_level}")
-
-    # Control the device
-    await client.async_set_mode(OperatingMode.MANUAL)
-    await client.async_set_fan_speed(7)
-    await client.async_set_boost(True)
-
-    await client.disconnect()
+        await client.async_set_mode(OperatingMode.MANUAL)
+        await client.async_set_fan_speed(7)
 
 asyncio.run(main())
+```
+
+### Factory method
+
+```python
+client = await AirobotModbusClient.create("192.168.1.100")
+```
+
+### Error handling
+
+All exceptions inherit from `AirobotError`:
+
+```python
+from pyairobotmodbus import AirobotError, AirobotConnectionError, AirobotTimeoutError
+
+try:
+    async with AirobotModbusClient("192.168.1.100") as client:
+        data = await client.async_get_data()
+except AirobotTimeoutError:
+    print("Device did not respond in time")
+except AirobotConnectionError:
+    print("Could not connect to device")
+except AirobotError as e:
+    print(f"Communication error: {e}")
+```
+
+### Sensor data
+
+`async_get_data()` returns an `AirobotData` snapshot with:
+
+- **Temperatures** — supply, extract, outside, exhaust, extra (°C)
+- **Humidity** — supply, extract, outside, exhaust, extra (RH%)
+- **Air quality** — CO2 (ppm), VOC (index), PM2.5 (μg/m³)
+- **Fans** — supply/extract level, RPM, and airflow (m³/h)
+- **Status** — error flags, heat recovery efficiency, working time
+
+### Device control
+
+```python
+# Operating mode
+await client.async_set_mode(OperatingMode.AUTOMATIC)
+
+# Fan speed (1-10)
+await client.async_set_fan_speed(7)
+
+# Toggles
+await client.async_set_boost(True)
+await client.async_set_overpressure(True)
+await client.async_set_bypass(True)
+await client.async_set_power(True)
+
+# Setpoints
+await client.async_set_co2_setpoint(800)         # ppm
+await client.async_set_humidity_setpoint(50.0)    # RH%
+await client.async_set_voc_setpoint(200)          # index
+await client.async_set_pm25_setpoint(25)          # μg/m³
+
+# Timeouts
+await client.async_set_boost_timeout(1200)        # seconds
+await client.async_set_overpressure_timeout(600)  # seconds
+
+# Filter reminder
+await client.async_set_filter_reminder_interval(4380)  # hours
+
+# Sensor control toggles
+await client.async_set_humidity_control(True)
+await client.async_set_voc_control(True)
+await client.async_set_pm_control(True)
 ```
 
 ## CLI
