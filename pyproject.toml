@@ -9,9 +9,29 @@ description = "Python library for communicating with Airobot ventilation units v
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
+authors = [
+    { name = "Dāvis Mednis", email = "davis@medn.is" },
+]
+keywords = ["airobot", "modbus", "ventilation", "hvac", "home-assistant"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Home Automation",
+    "Topic :: System :: Hardware :: Hardware Drivers",
+    "Typing :: Typed",
+]
 dependencies = [
     "pymodbus>=3.10,<4",
 ]
+
+[project.urls]
+Homepage = "https://github.com/dmednis/pyairobotmodbus"
+Repository = "https://github.com/dmednis/pyairobotmodbus"
+Issues = "https://github.com/dmednis/pyairobotmodbus/issues"
 
 [project.scripts]
 pyairobotmodbus = "pyairobotmodbus.cli:main"
