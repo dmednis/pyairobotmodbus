@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `AirobotData` sensor fields that are always present (core temperatures,
   humidity, CO2, VOC, PM2.5, airflow) are no longer typed as `Optional` — they
   always carry a value. `extra_temp` and `extra_humidity` remain `Optional`.
+- `set` with an unknown/blank parameter now lists every parameter with its
+  accepted values; numeric ranges are sourced from the same limits used for
+  write validation, so they can't drift.
+
+### Internal
+- Collapsed the duplicated Modbus error-handling into a single `_execute`
+  helper across all reads and writes
+- Register parsing in `async_get_data` is now keyed by named register constants
+  instead of bare block offsets, and unused/duplicate register constants were
+  removed (error-flag values live solely in the `ErrorFlag` enum)
 
 ### Fixed
 - Extra temperature/humidity sensors now decode to `None` when the optional

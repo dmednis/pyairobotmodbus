@@ -606,7 +606,7 @@ class TestEnhancedErrorHandling:
             ]
         )
         mock.read_coils = AsyncMock(side_effect=TimeoutError("coil timeout"))
-        with pytest.raises(AirobotTimeoutError, match="Timeout reading register"):
+        with pytest.raises(AirobotTimeoutError, match="Timeout reading coil"):
             await c.async_get_data()
 
     @pytest.mark.asyncio

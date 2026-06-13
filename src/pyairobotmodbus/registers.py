@@ -56,11 +56,10 @@ REG_HUMIDITY_SETPOINT = 2003
 REG_CO2_SETPOINT = 2004
 REG_MANUAL_FAN_LEVEL = 2005
 REG_OVERPRESSURE_FAN_LEVEL = 2007
-REG_SETTINGS_FLAGS = 2009
+# 2009 settings flags, 2014/2015 UI flags are read within the blocks below but
+# not exposed — the equivalent coil states (4000-series) are read directly.
 REG_BOOST_TIMEOUT = 2010  # 32-bit, spans 2010-2011, seconds
 REG_OVERPRESSURE_TIMEOUT = 2012  # 32-bit, spans 2012-2013, seconds
-REG_UI_FLAGS = 2014
-REG_UI_FLAGS1 = 2015
 REG_FILTER_REMINDER_INTERVAL = 2017  # hours
 REG_FILTER_REMINDER_ELAPSED = 2018
 REG_VOC_SETPOINT = 2034
@@ -87,7 +86,6 @@ COIL_FILTER_ALERT = 4020  # read-only
 COIL_HUMIDITY_CONTROL_ENABLE = 4027
 COIL_VOC_CONTROL_ENABLE = 4030
 COIL_PM_CONTROL_ENABLE = 4031
-COIL_MODBUS_ON = 4036
 
 # Coil read blocks
 COIL_BLOCK_1 = (4000, 7)  # 4000-4006: power, bypass, boost, overpressure, reboot
@@ -95,43 +93,8 @@ COIL_BLOCK_2 = (4020, 1)  # 4020: filter alert
 COIL_BLOCK_3 = (4027, 1)  # 4027: humidity control
 COIL_BLOCK_4 = (4030, 7)  # 4030-4036: VOC, PM, modbus
 
-# ---------------------------------------------------------------------------
-# Settings flags bitmasks (register 2009)
-# ---------------------------------------------------------------------------
-
-FLAG_POWER_ON = 1
-FLAG_BOOST_ON = 16
-FLAG_OVERPRESSURE_ON = 32
-FLAG_REBOOT = 64
-
-# ---------------------------------------------------------------------------
-# UI flags bitmasks (register 2014)
-# ---------------------------------------------------------------------------
-
-UI_FLAG_FILTER_ALERT = 16
-
-# ---------------------------------------------------------------------------
-# UI flags1 bitmasks (register 2015)
-# ---------------------------------------------------------------------------
-
-UI_FLAG1_MODBUS_ON = 16
-
-# ---------------------------------------------------------------------------
-# Error flags bitmasks (register 1026)
-# ---------------------------------------------------------------------------
-
-ERROR_FIRE_ALARM = 1
-ERROR_FAN1 = 2
-ERROR_FAN2 = 4
-ERROR_SENSOR_1 = 8
-ERROR_SENSOR_2 = 16
-ERROR_SENSOR_3 = 32
-ERROR_SENSOR_4 = 64
-ERROR_SENSOR_5 = 128
-ERROR_SENSOR_CO2 = 256
-ERROR_HEATER = 512
-ERROR_LOW_SUPPLY = 1024
-ERROR_FILTER = 2048
+# Error-flag bit values for register 1026 are modelled by the ErrorFlag enum
+# in models.py — see that single source of truth rather than redefining them.
 
 # ---------------------------------------------------------------------------
 # Write validation limits (min, max) from spec

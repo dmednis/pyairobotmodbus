@@ -11,6 +11,27 @@ from typing import Any
 from .client import AirobotModbusClient
 from .exceptions import AirobotError
 from .models import AirobotData, ErrorFlag, OperatingMode
+from .registers import (
+    LIMITS,
+    REG_BOOST_TIMEOUT,
+    REG_CO2_SETPOINT,
+    REG_FILTER_REMINDER_INTERVAL,
+    REG_MANUAL_FAN_LEVEL,
+    REG_OVERPRESSURE_FAN_LEVEL,
+    REG_OVERPRESSURE_TIMEOUT,
+    REG_PM25_SETPOINT,
+    REG_VOC_SETPOINT,
+)
+
+
+def _range_hint(reg: int) -> str:
+    """Build a CLI range hint (e.g. ``"450-2000"``) from the write LIMITS.
+
+    Keeps the validated range and the displayed range as a single source of
+    truth — the values come straight from :data:`LIMITS`.
+    """
+    low, high = LIMITS[reg]
+    return f"{low}-{high}"
 
 
 def _parse_bool(v: str) -> bool:
@@ -130,7 +151,7 @@ SETTERS: dict[str, tuple[str, _Converter | None, str]] = {
         _parse_mode,
         "auto|manual",
     ),
-    "fan_speed": ("async_set_fan_speed", int, "0-10"),
+    "fan_speed": ("async_set_fan_speed", int, _range_hint(REG_MANUAL_FAN_LEVEL)),
     "power": ("async_set_power", _parse_bool, "on|off"),
     "boost": ("async_set_boost", _parse_bool, "on|off"),
     "overpressure": (
@@ -139,29 +160,29 @@ SETTERS: dict[str, tuple[str, _Converter | None, str]] = {
         "on|off",
     ),
     "bypass": ("async_set_bypass", _parse_bool, "on|off"),
-    "co2_setpoint": ("async_set_co2_setpoint", int, "450-2000"),
+    "co2_setpoint": ("async_set_co2_setpoint", int, _range_hint(REG_CO2_SETPOINT)),
     "humidity_setpoint": (
         "async_set_humidity_setpoint",
         float,
-        "5.0-95.0",
+        "5.0-95.0",  # RH%, scaled x10 on the device — not a raw LIMITS range
     ),
-    "voc_setpoint": ("async_set_voc_setpoint", int, "0-500"),
-    "pm25_setpoint": ("async_set_pm25_setpoint", int, "0-999"),
-    "boost_timeout": ("async_set_boost_timeout", int, "180-3600"),
+    "voc_setpoint": ("async_set_voc_setpoint", int, _range_hint(REG_VOC_SETPOINT)),
+    "pm25_setpoint": ("async_set_pm25_setpoint", int, _range_hint(REG_PM25_SETPOINT)),
+    "boost_timeout": ("async_set_boost_timeout", int, _range_hint(REG_BOOST_TIMEOUT)),
     "overpressure_timeout": (
         "async_set_overpressure_timeout",
         int,
-        "180-3600",
+        _range_hint(REG_OVERPRESSURE_TIMEOUT),
     ),
     "overpressure_fan_level": (
         "async_set_overpressure_fan_level",
         int,
-        "0-10",
+        _range_hint(REG_OVERPRESSURE_FAN_LEVEL),
     ),
     "filter_reminder_interval": (
         "async_set_filter_reminder_interval",
         int,
-        "720-8760",
+        _range_hint(REG_FILTER_REMINDER_INTERVAL),
     ),
     "humidity_control": (
         "async_set_humidity_control",
@@ -197,7 +218,10 @@ async def _cmd_set(args: argparse.Namespace) -> None:
     param: str = args.param
     if param not in SETTERS:
         print(f"Unknown parameter: {param}")
-        print(f"Available parameters: {', '.join(sorted(SETTERS))}")
+        print("Available parameters:")
+        for name in sorted(SETTERS):
+            hint = SETTERS[name][2]
+            print(f"  {name} {hint}".rstrip())
         sys.exit(1)
 
     method_name, converter, _ = SETTERS[param]

@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import logging
-from typing import Self
+from collections.abc import Awaitable, Callable
+from typing import Any, Self
 
 from pymodbus import ModbusException
 from pymodbus.client import AsyncModbusTcpClient
 
 from .exceptions import (
     AirobotConnectionError,
+    AirobotError,
     AirobotInvalidDataError,
     AirobotReadError,
     AirobotTimeoutError,
@@ -23,6 +25,7 @@ from .registers import (
     COIL_BLOCK_4,
     COIL_BOOST_ON,
     COIL_BYPASS_ON,
+    COIL_FILTER_ALERT,
     COIL_HUMIDITY_CONTROL_ENABLE,
     COIL_OVERPRESSURE_ON,
     COIL_PM_CONTROL_ENABLE,
@@ -33,16 +36,40 @@ from .registers import (
     EXTRA_TEMP_ABSENT_RAW,
     LIMITS,
     REG_BOOST_TIMEOUT,
+    REG_CO2_LEVEL,
     REG_CO2_SETPOINT,
+    REG_ERROR_FLAGS,
+    REG_EXHAUST_AIR_HUMIDITY,
+    REG_EXHAUST_AIR_TEMP,
+    REG_EXTRA_HUMIDITY,
+    REG_EXTRA_TEMP,
+    REG_EXTRACT_AIR_HUMIDITY,
+    REG_EXTRACT_AIR_TEMP,
+    REG_EXTRACT_AIRFLOW,
+    REG_EXTRACT_FAN_LEVEL,
+    REG_EXTRACT_FAN_RPM,
     REG_FILTER_REMINDER_ELAPSED,
     REG_FILTER_REMINDER_INTERVAL,
+    REG_FIRMWARE_VERSION,
+    REG_HEAT_RECOVERY_EFFICIENCY,
     REG_HUMIDITY_SETPOINT,
     REG_MANUAL_FAN_LEVEL,
+    REG_OUTSIDE_AIR_HUMIDITY,
+    REG_OUTSIDE_AIR_TEMP,
     REG_OVERPRESSURE_FAN_LEVEL,
     REG_OVERPRESSURE_TIMEOUT,
+    REG_PM25,
     REG_PM25_SETPOINT,
+    REG_SERVER_CONNECTED,
+    REG_SUPPLY_AIR_HUMIDITY,
+    REG_SUPPLY_AIR_TEMP,
+    REG_SUPPLY_AIRFLOW,
+    REG_SUPPLY_FAN_LEVEL,
+    REG_SUPPLY_FAN_RPM,
+    REG_VOC,
     REG_VOC_SETPOINT,
     REG_WORKING_MODE,
+    REG_WORKING_TIME,
     SENSOR_BLOCK_1,
     SENSOR_BLOCK_2,
     SENSOR_BLOCK_3,
@@ -123,11 +150,7 @@ class AirobotModbusClient:
             raise AirobotTimeoutError(
                 f"Timeout connecting to {self._host}:{self._port}: {exc}"
             ) from exc
-        except OSError as exc:
-            raise AirobotConnectionError(
-                f"Failed to connect to {self._host}:{self._port}: {exc}"
-            ) from exc
-        except ModbusException as exc:
+        except (OSError, ModbusException) as exc:
             raise AirobotConnectionError(
                 f"Failed to connect to {self._host}:{self._port}: {exc}"
             ) from exc
@@ -163,79 +186,67 @@ class AirobotModbusClient:
     # Reading data
     # ------------------------------------------------------------------
 
-    async def _read_input(self, address: int, count: int) -> list[int]:
-        """Read input registers (FC04) and return raw values."""
+    async def _execute(
+        self,
+        operation: Callable[[], Awaitable[Any]],
+        *,
+        action: str,
+        error_cls: type[AirobotError],
+    ) -> Any:
+        """Run a Modbus operation, translating failures to Airobot errors.
+
+        ``action`` is a present-tense phrase (e.g. ``"reading coil 4000"``) woven
+        into the error messages. ``error_cls`` is raised when the device returns
+        a protocol-level error response.
+        """
         self._ensure_connected()
         try:
-            result = await self._client.read_input_registers(
-                address=address, count=count, device_id=self._device_id
-            )
+            result = await operation()
         except TimeoutError as exc:
-            raise AirobotTimeoutError(
-                f"Timeout reading register {address}: {exc}"
-            ) from exc
-        except OSError as exc:
+            raise AirobotTimeoutError(f"Timeout {action}: {exc}") from exc
+        except (OSError, ModbusException) as exc:
             raise AirobotConnectionError(
-                f"Communication error reading input register {address}: {exc}"
-            ) from exc
-        except ModbusException as exc:
-            raise AirobotConnectionError(
-                f"Communication error reading input register {address}: {exc}"
+                f"Communication error {action}: {exc}"
             ) from exc
         if result.isError():
-            raise AirobotReadError(
-                f"Modbus error reading input register {address}: {result}"
-            )
+            raise error_cls(f"Modbus error {action}: {result}")
+        return result
+
+    async def _read_input(self, address: int, count: int) -> list[int]:
+        """Read input registers (FC04) and return raw values."""
+        result = await self._execute(
+            lambda: self._client.read_input_registers(
+                address=address, count=count, device_id=self._device_id
+            ),
+            action=f"reading input register {address}",
+            error_cls=AirobotReadError,
+        )
         registers = list(result.registers)
         _validate_register_count(f"input@{address}", registers, count)
         return registers
 
     async def _read_holding(self, address: int, count: int) -> list[int]:
         """Read holding registers (FC03) and return raw values."""
-        self._ensure_connected()
-        try:
-            result = await self._client.read_holding_registers(
+        result = await self._execute(
+            lambda: self._client.read_holding_registers(
                 address=address, count=count, device_id=self._device_id
-            )
-        except TimeoutError as exc:
-            raise AirobotTimeoutError(
-                f"Timeout reading register {address}: {exc}"
-            ) from exc
-        except OSError as exc:
-            raise AirobotConnectionError(
-                f"Communication error reading register {address}: {exc}"
-            ) from exc
-        except ModbusException as exc:
-            raise AirobotConnectionError(
-                f"Communication error reading register {address}: {exc}"
-            ) from exc
-        if result.isError():
-            raise AirobotReadError(f"Modbus error reading register {address}: {result}")
+            ),
+            action=f"reading register {address}",
+            error_cls=AirobotReadError,
+        )
         registers = list(result.registers)
         _validate_register_count(f"holding@{address}", registers, count)
         return registers
 
     async def _read_coils(self, address: int, count: int) -> list[bool]:
         """Read coils and return boolean values."""
-        self._ensure_connected()
-        try:
-            result = await self._client.read_coils(
+        result = await self._execute(
+            lambda: self._client.read_coils(
                 address=address, count=count, device_id=self._device_id
-            )
-        except TimeoutError as exc:
-            raise AirobotTimeoutError(
-                f"Timeout reading register {address}: {exc}"
-            ) from exc
-        except OSError as exc:
-            raise AirobotConnectionError(
-                f"Communication error reading coil {address}: {exc}"
-            ) from exc
-        except ModbusException as exc:
-            raise AirobotConnectionError(
-                f"Communication error reading coil {address}: {exc}"
-            ) from exc
-        if result.isError():
-            raise AirobotReadError(f"Modbus error reading coil {address}: {result}")
+            ),
+            action=f"reading coil {address}",
+            error_cls=AirobotReadError,
+        )
         bits = list(result.bits[:count])
         if len(bits) != count:
             raise AirobotInvalidDataError(
@@ -270,6 +281,17 @@ class AirobotModbusClient:
         """Convert raw register value to humidity in RH% (value / 10)."""
         return raw / 10.0
 
+    @staticmethod
+    def _at(block: list[Any], block_def: tuple[int, int], reg: int) -> Any:
+        """Return the block element holding the value for register ``reg``.
+
+        ``block_def`` is the ``(start_address, count)`` tuple the block was read
+        with, so an absolute register address maps to its position in the block.
+        Parsing by register name (rather than a bare index) keeps the offsets
+        from drifting away from the register map.
+        """
+        return block[reg - block_def[0]]
+
     async def async_get_data(self) -> AirobotData:
         """Read all sensor data and settings from the device."""
         # Batch-read all register blocks
@@ -292,87 +314,99 @@ class AirobotModbusClient:
         c3 = await self._read_coils(*COIL_BLOCK_3)  # 4027
         c4 = await self._read_coils(*COIL_BLOCK_4)  # 4030-4036
 
-        # Parse sensor block 1 (1000-1011)
-        firmware_version = s1[0]
-        extract_air_temp = self._scale_temp(self._to_signed16(s1[1]))
-        supply_air_temp = self._scale_temp(self._to_signed16(s1[2]))
-        outside_air_temp = self._scale_temp(self._to_signed16(s1[3]))
-        exhaust_air_temp = self._scale_temp(self._to_signed16(s1[4]))
-        extra_temp_raw = self._to_signed16(s1[5])
+        # Parse sensor block 1 (1000-1011). The extra temp/humidity sensors are
+        # optional, so their device sentinels decode to None.
+        def s1_temp(reg: int) -> float:
+            return self._scale_temp(
+                self._to_signed16(self._at(s1, SENSOR_BLOCK_1, reg))
+            )
+
+        def s1_humidity(reg: int) -> float:
+            return self._scale_humidity(
+                self._to_signed16(self._at(s1, SENSOR_BLOCK_1, reg))
+            )
+
+        firmware_version = self._at(s1, SENSOR_BLOCK_1, REG_FIRMWARE_VERSION)
+        extract_air_temp = s1_temp(REG_EXTRACT_AIR_TEMP)
+        supply_air_temp = s1_temp(REG_SUPPLY_AIR_TEMP)
+        outside_air_temp = s1_temp(REG_OUTSIDE_AIR_TEMP)
+        exhaust_air_temp = s1_temp(REG_EXHAUST_AIR_TEMP)
+        extra_temp_raw = self._to_signed16(self._at(s1, SENSOR_BLOCK_1, REG_EXTRA_TEMP))
         extra_temp = (
             None
             if extra_temp_raw == EXTRA_TEMP_ABSENT_RAW
             else self._scale_temp(extra_temp_raw)
         )
-        extract_air_humidity = self._scale_humidity(self._to_signed16(s1[6]))
-        supply_air_humidity = self._scale_humidity(self._to_signed16(s1[7]))
-        outside_air_humidity = self._scale_humidity(self._to_signed16(s1[8]))
-        exhaust_air_humidity = self._scale_humidity(self._to_signed16(s1[9]))
-        extra_humidity_raw = self._to_signed16(s1[10])
+        extract_air_humidity = s1_humidity(REG_EXTRACT_AIR_HUMIDITY)
+        supply_air_humidity = s1_humidity(REG_SUPPLY_AIR_HUMIDITY)
+        outside_air_humidity = s1_humidity(REG_OUTSIDE_AIR_HUMIDITY)
+        exhaust_air_humidity = s1_humidity(REG_EXHAUST_AIR_HUMIDITY)
+        extra_humidity_raw = self._to_signed16(
+            self._at(s1, SENSOR_BLOCK_1, REG_EXTRA_HUMIDITY)
+        )
         extra_humidity = (
             None
             if extra_humidity_raw == EXTRA_HUMIDITY_ABSENT_RAW
             else self._scale_humidity(extra_humidity_raw)
         )
-        co2_level = s1[11]
+        co2_level = self._at(s1, SENSOR_BLOCK_1, REG_CO2_LEVEL)
 
-        # Parse sensor block 2 (1014-1019, offset from 1014)
-        supply_fan_level = s2[0]
-        extract_fan_level = s2[1]
-        supply_fan_rpm = s2[2]
-        extract_fan_rpm = s2[3]
-        working_time_ms = self._combine_u32(s2, 4)
+        # Parse sensor block 2 (1014-1019)
+        supply_fan_level = self._at(s2, SENSOR_BLOCK_2, REG_SUPPLY_FAN_LEVEL)
+        extract_fan_level = self._at(s2, SENSOR_BLOCK_2, REG_EXTRACT_FAN_LEVEL)
+        supply_fan_rpm = self._at(s2, SENSOR_BLOCK_2, REG_SUPPLY_FAN_RPM)
+        extract_fan_rpm = self._at(s2, SENSOR_BLOCK_2, REG_EXTRACT_FAN_RPM)
+        working_time_ms = self._combine_u32(s2, REG_WORKING_TIME - SENSOR_BLOCK_2[0])
 
-        # Parse sensor block 3 (1026-1029, offset from 1026)
-        error_flags = ErrorFlag(self._combine_u32(s3, 0))
-        server_connected = bool(s3[2])
-        voc = s3[3]
+        # Parse sensor block 3 (1026-1029)
+        error_flags = ErrorFlag(
+            self._combine_u32(s3, REG_ERROR_FLAGS - SENSOR_BLOCK_3[0])
+        )
+        server_connected = bool(self._at(s3, SENSOR_BLOCK_3, REG_SERVER_CONNECTED))
+        voc = self._at(s3, SENSOR_BLOCK_3, REG_VOC)
 
-        # Parse sensor block 4 (1031-1034, offset from 1031)
-        pm25 = s4[0]  # single 16-bit register (1031), μg/m³
-        heat_recovery_efficiency = s4[3]
+        # Parse sensor block 4 (1031-1034)
+        pm25 = self._at(s4, SENSOR_BLOCK_4, REG_PM25)  # single 16-bit reg, μg/m³
+        heat_recovery_efficiency = self._at(
+            s4, SENSOR_BLOCK_4, REG_HEAT_RECOVERY_EFFICIENCY
+        )
 
         # Parse sensor block 5 (1051-1052)
-        supply_airflow = s5[0]
-        extract_airflow = s5[1]
+        supply_airflow = self._at(s5, SENSOR_BLOCK_5, REG_SUPPLY_AIRFLOW)
+        extract_airflow = self._at(s5, SENSOR_BLOCK_5, REG_EXTRACT_AIRFLOW)
 
         # Parse settings
-        operating_mode = OperatingMode(r1[0])
-        # r2 is registers 2003-2008 (count=6)
-        humidity_setpoint = r2[0] / 10.0  # 50-950 -> 5.0-95.0
-        co2_setpoint = r2[1]  # 450-2000 ppm
-        manual_fan_level = r2[2]  # 0-10
-        # r2[3] is register 2006 (gap)
-        overpressure_fan_level = r2[4]  # register 2007
-        # r3 is registers 2009-2014 (count=6)
-        # settings_flags = r3[0]  # register 2009 (informational, coils are more direct)
-        boost_timeout = self._combine_u32(r3, 1)  # register 2010-2011
-        overpressure_timeout = self._combine_u32(r3, 3)  # register 2012-2013
-        # r3[5] = register 2014 (UI flags)
-
-        # r4 is registers 2015-2018 (count=4)
-        filter_reminder_interval = r4[2]  # register 2017
-        filter_reminder_elapsed = r4[3]  # register 2018
-
-        voc_setpoint = r5[0]
-        pm25_setpoint = r6[0]
+        operating_mode = OperatingMode(self._at(r1, SETTINGS_BLOCK_1, REG_WORKING_MODE))
+        humidity_setpoint = self._at(r2, SETTINGS_BLOCK_2, REG_HUMIDITY_SETPOINT) / 10.0
+        co2_setpoint = self._at(r2, SETTINGS_BLOCK_2, REG_CO2_SETPOINT)
+        manual_fan_level = self._at(r2, SETTINGS_BLOCK_2, REG_MANUAL_FAN_LEVEL)
+        overpressure_fan_level = self._at(
+            r2, SETTINGS_BLOCK_2, REG_OVERPRESSURE_FAN_LEVEL
+        )
+        boost_timeout = self._combine_u32(r3, REG_BOOST_TIMEOUT - SETTINGS_BLOCK_3[0])
+        overpressure_timeout = self._combine_u32(
+            r3, REG_OVERPRESSURE_TIMEOUT - SETTINGS_BLOCK_3[0]
+        )
+        filter_reminder_interval = self._at(
+            r4, SETTINGS_BLOCK_4, REG_FILTER_REMINDER_INTERVAL
+        )
+        filter_reminder_elapsed = self._at(
+            r4, SETTINGS_BLOCK_4, REG_FILTER_REMINDER_ELAPSED
+        )
+        voc_setpoint = self._at(r5, SETTINGS_BLOCK_5, REG_VOC_SETPOINT)
+        pm25_setpoint = self._at(r6, SETTINGS_BLOCK_6, REG_PM25_SETPOINT)
 
         # Parse coils
-        # c1: 4000-4006 (7 coils)
-        power_on = c1[0]
-        # c1[1], c1[2] are gaps (4001, 4002)
-        bypass_on = c1[3]  # 4003
-        boost_on = c1[4]  # 4004
-        overpressure_on = c1[5]  # 4005
-        # c1[6] = 4006 (reboot, transient)
-
-        filter_alert = c2[0]  # 4020
-
-        humidity_control_enabled = c3[0]  # 4027
-
-        # c4: 4030-4036 (7 coils)
-        voc_control_enabled = c4[0]  # 4030
-        pm_control_enabled = c4[1]  # 4031
+        power_on = self._at(c1, COIL_BLOCK_1, COIL_POWER_ON)
+        bypass_on = self._at(c1, COIL_BLOCK_1, COIL_BYPASS_ON)
+        boost_on = self._at(c1, COIL_BLOCK_1, COIL_BOOST_ON)
+        overpressure_on = self._at(c1, COIL_BLOCK_1, COIL_OVERPRESSURE_ON)
+        filter_alert = self._at(c2, COIL_BLOCK_2, COIL_FILTER_ALERT)
+        humidity_control_enabled = self._at(
+            c3, COIL_BLOCK_3, COIL_HUMIDITY_CONTROL_ENABLE
+        )
+        voc_control_enabled = self._at(c4, COIL_BLOCK_4, COIL_VOC_CONTROL_ENABLE)
+        pm_control_enabled = self._at(c4, COIL_BLOCK_4, COIL_PM_CONTROL_ENABLE)
 
         return AirobotData(
             firmware_version=firmware_version,
@@ -434,65 +468,42 @@ class AirobotModbusClient:
                     f"Value {value} out of range [{min_val}, {max_val}] "
                     f"for register {address}"
                 )
-        try:
-            result = await self._client.write_register(
+        await self._execute(
+            lambda: self._client.write_register(
                 address=address, value=value, device_id=self._device_id
-            )
-        except TimeoutError as exc:
-            raise AirobotTimeoutError(
-                f"Timeout writing register {address}: {exc}"
-            ) from exc
-        except OSError as exc:
-            raise AirobotConnectionError(
-                f"Communication error writing register {address}: {exc}"
-            ) from exc
-        except ModbusException as exc:
-            raise AirobotConnectionError(
-                f"Communication error writing register {address}: {exc}"
-            ) from exc
-        if result.isError():
-            raise AirobotWriteError(
-                f"Modbus error writing register {address}: {result}"
-            )
+            ),
+            action=f"writing register {address}",
+            error_cls=AirobotWriteError,
+        )
 
     async def _write_coil(self, address: int, value: bool) -> None:
         """Write a single coil."""
-        self._ensure_connected()
-        try:
-            result = await self._client.write_coil(
+        await self._execute(
+            lambda: self._client.write_coil(
                 address=address, value=value, device_id=self._device_id
-            )
-        except TimeoutError as exc:
-            raise AirobotTimeoutError(f"Timeout writing coil {address}: {exc}") from exc
-        except OSError as exc:
-            raise AirobotConnectionError(
-                f"Communication error writing coil {address}: {exc}"
-            ) from exc
-        except ModbusException as exc:
-            raise AirobotConnectionError(
-                f"Communication error writing coil {address}: {exc}"
-            ) from exc
-        if result.isError():
-            raise AirobotWriteError(f"Modbus error writing coil {address}: {result}")
+            ),
+            action=f"writing coil {address}",
+            error_cls=AirobotWriteError,
+        )
 
     async def async_set_mode(self, mode: OperatingMode) -> None:
         """Set the device working mode."""
         await self._write_register(REG_WORKING_MODE, int(mode))
 
     async def async_set_fan_speed(self, speed: int) -> None:
-        """Set the manual mode fan working level (0-10)."""
+        """Set the manual mode fan working level. Range enforced from LIMITS."""
         await self._write_register(REG_MANUAL_FAN_LEVEL, speed)
 
     async def async_set_overpressure_fan_level(self, level: int) -> None:
-        """Set the overpressure/fireplace mode fan level (0-10)."""
+        """Set the overpressure/fireplace mode fan level. Range from LIMITS."""
         await self._write_register(REG_OVERPRESSURE_FAN_LEVEL, level)
 
     async def async_set_co2_setpoint(self, ppm: int) -> None:
-        """Set the CO2 setpoint (450-2000 ppm)."""
+        """Set the CO2 setpoint, in ppm. Range enforced from LIMITS."""
         await self._write_register(REG_CO2_SETPOINT, ppm)
 
     async def async_set_humidity_setpoint(self, rh: float) -> None:
-        """Set the humidity setpoint (5.0-95.0 RH%).
+        """Set the humidity setpoint, in RH%. Range enforced from LIMITS.
 
         The value is stored as integer * 10 on the device.
         """
@@ -500,23 +511,23 @@ class AirobotModbusClient:
         await self._write_register(REG_HUMIDITY_SETPOINT, raw)
 
     async def async_set_voc_setpoint(self, index: int) -> None:
-        """Set the VOC setpoint (0-500 index)."""
+        """Set the VOC setpoint, as an index. Range enforced from LIMITS."""
         await self._write_register(REG_VOC_SETPOINT, index)
 
     async def async_set_pm25_setpoint(self, ugm3: int) -> None:
-        """Set the PM2.5 setpoint (0-999 μg/m³)."""
+        """Set the PM2.5 setpoint, in μg/m³. Range enforced from LIMITS."""
         await self._write_register(REG_PM25_SETPOINT, ugm3)
 
     async def async_set_boost_timeout(self, seconds: int) -> None:
-        """Set the boost mode timeout (180-3600 seconds)."""
+        """Set the boost mode timeout, in seconds. Range enforced from LIMITS."""
         await self._write_register(REG_BOOST_TIMEOUT, seconds)
 
     async def async_set_overpressure_timeout(self, seconds: int) -> None:
-        """Set the overpressure/fireplace mode timeout (180-3600 seconds)."""
+        """Set the overpressure/fireplace timeout (s). Range from LIMITS."""
         await self._write_register(REG_OVERPRESSURE_TIMEOUT, seconds)
 
     async def async_set_filter_reminder_interval(self, hours: int) -> None:
-        """Set the filter reminder interval (720-8760 hours)."""
+        """Set the filter reminder interval, in hours. Range from LIMITS."""
         await self._write_register(REG_FILTER_REMINDER_INTERVAL, hours)
 
     async def async_reset_filter_timer(self) -> None:
