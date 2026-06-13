@@ -312,7 +312,7 @@ class AirobotModbusClient:
         voc = s3[3]
 
         # Parse sensor block 4 (1031-1034, offset from 1031)
-        pm25 = self._combine_u32(s4, 0)
+        pm25 = s4[0]  # single 16-bit register (1031), μg/m³
         heat_recovery_efficiency = s4[3]
 
         # Parse sensor block 5 (1051-1052)

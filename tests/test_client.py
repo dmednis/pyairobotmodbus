@@ -89,8 +89,10 @@ class TestReadData:
         s3 = [0, 0, 1, 150]
 
         # Sensor block 4: 1031-1034 (4 registers)
-        # pm25=25 (2 regs), gap, heat_recovery=85
-        s4 = [0, 25, 0, 85]
+        # pm25=2 (single 16-bit reg at 1031); 1032 is a separate
+        # register that also reads 2 — must NOT be folded into pm25
+        # (regression: would yield 0x00020002 = 131074)
+        s4 = [2, 2, 0, 85]
 
         # Sensor block 5: 1051-1052 (2 registers)
         s5 = [120, 115]
@@ -173,7 +175,7 @@ class TestReadData:
         assert data.error_flags == ErrorFlag.NONE
         assert data.server_connected is True
         assert data.voc == 150
-        assert data.pm25 == 25
+        assert data.pm25 == 2
         assert data.heat_recovery_efficiency == 85
         assert data.supply_airflow == 120
         assert data.extract_airflow == 115
