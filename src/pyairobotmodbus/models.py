@@ -42,23 +42,23 @@ class AirobotData:
     firmware_version: int
 
     # Temperatures (°C)
-    extract_air_temp: float | None
-    supply_air_temp: float | None
-    outside_air_temp: float | None
-    exhaust_air_temp: float | None
-    extra_temp: float | None
+    extract_air_temp: float
+    supply_air_temp: float
+    outside_air_temp: float
+    exhaust_air_temp: float
+    extra_temp: float | None  # optional sensor; None when not installed
 
     # Humidity (RH%)
-    extract_air_humidity: float | None
-    supply_air_humidity: float | None
-    outside_air_humidity: float | None
-    exhaust_air_humidity: float | None
-    extra_humidity: float | None
+    extract_air_humidity: float
+    supply_air_humidity: float
+    outside_air_humidity: float
+    exhaust_air_humidity: float
+    extra_humidity: float | None  # optional sensor; None when not installed
 
     # Air quality
-    co2_level: int | None  # ppm
-    voc: int | None  # index 0-500
-    pm25: int | None  # μg/m³
+    co2_level: int  # ppm
+    voc: int  # index 0-500
+    pm25: int  # μg/m³
 
     # Fan status
     supply_fan_level: int
@@ -67,8 +67,8 @@ class AirobotData:
     extract_fan_rpm: int
 
     # Airflow (m³/h) — only with constant flow feature
-    supply_airflow: int | None
-    extract_airflow: int | None
+    supply_airflow: int
+    extract_airflow: int
 
     # Device status
     working_time_ms: int  # milliseconds since last reset

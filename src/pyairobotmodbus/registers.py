@@ -40,6 +40,13 @@ SENSOR_BLOCK_3 = (1026, 4)  # 1026-1029: errors, server connected, VOC
 SENSOR_BLOCK_4 = (1031, 4)  # 1031-1034: PM2.5, heat recovery
 SENSOR_BLOCK_5 = (1051, 2)  # 1051-1052: airflow
 
+# Sentinel raw values reported by optional sensors when not installed.
+# These are the signed-16 register values; the scaled readings (value / 10)
+# are 3276.7 °C and -0.1 % respectively, which the device emits when the
+# corresponding extra sensor is absent.
+EXTRA_TEMP_ABSENT_RAW = 32767  # 0x7FFF -> 3276.7 °C
+EXTRA_HUMIDITY_ABSENT_RAW = -1  # 0xFFFF -> -0.1 %
+
 # ---------------------------------------------------------------------------
 # Read/write holding registers (FC03/FC06) — settings and setpoints
 # ---------------------------------------------------------------------------

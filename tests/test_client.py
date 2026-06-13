@@ -198,6 +198,49 @@ class TestReadData:
         assert data.filter_alert is False
 
     @pytest.mark.asyncio
+    async def test_extra_sensors_absent_decode_to_none(
+        self, mock_modbus_client: Any
+    ) -> None:
+        c, mock = mock_modbus_client
+
+        # extra temp raw 32767 (0x7FFF -> 3276.7 °C) and extra humidity raw
+        # 0xFFFF (-1 -> -0.1 %) are the sentinels the device reports when the
+        # optional sensors are not installed.
+        s1 = [300, 215, 220, 50, 65526, 32767, 650, 600, 800, 400, 0xFFFF, 450]
+        s2 = [5, 5, 1200, 1100, 0x7860, 0x79FC]
+        s3 = [0, 0, 1, 150]
+        s4 = [2, 2, 0, 85]
+        s5 = [120, 115]
+        r1 = [1]
+        r2 = [600, 800, 5, 0, 5, 0]
+        r3 = [1, 1800, 0, 1800, 0, 9]
+        r4 = [8, 0, 4320, 100]
+        r5 = [200]
+        r6 = [50]
+
+        mock.read_input_registers = AsyncMock(
+            side_effect=[make_register_result(b) for b in (s1, s2, s3, s4, s5)]
+        )
+        mock.read_holding_registers = AsyncMock(
+            side_effect=[make_register_result(b) for b in (r1, r2, r3, r4, r5, r6)]
+        )
+        mock.read_coils = AsyncMock(
+            side_effect=[
+                make_coil_result([True, False, False, False, False, False, False]),
+                make_coil_result([False]),
+                make_coil_result([False]),
+                make_coil_result([False] * 7),
+            ]
+        )
+
+        data = await c.async_get_data()
+
+        assert data.extra_temp is None
+        assert data.extra_humidity is None
+        # A real (non-sentinel) extra reading is still decoded normally.
+        assert data.extract_air_temp == pytest.approx(21.5)
+
+    @pytest.mark.asyncio
     async def test_read_error(self, mock_modbus_client: Any) -> None:
         c, mock = mock_modbus_client
         mock.read_input_registers = AsyncMock(return_value=make_error_result())

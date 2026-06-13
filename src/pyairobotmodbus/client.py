@@ -29,6 +29,8 @@ from .registers import (
     COIL_POWER_ON,
     COIL_REBOOT,
     COIL_VOC_CONTROL_ENABLE,
+    EXTRA_HUMIDITY_ABSENT_RAW,
+    EXTRA_TEMP_ABSENT_RAW,
     LIMITS,
     REG_BOOST_TIMEOUT,
     REG_CO2_SETPOINT,
@@ -296,12 +298,22 @@ class AirobotModbusClient:
         supply_air_temp = self._scale_temp(self._to_signed16(s1[2]))
         outside_air_temp = self._scale_temp(self._to_signed16(s1[3]))
         exhaust_air_temp = self._scale_temp(self._to_signed16(s1[4]))
-        extra_temp = self._scale_temp(self._to_signed16(s1[5]))
+        extra_temp_raw = self._to_signed16(s1[5])
+        extra_temp = (
+            None
+            if extra_temp_raw == EXTRA_TEMP_ABSENT_RAW
+            else self._scale_temp(extra_temp_raw)
+        )
         extract_air_humidity = self._scale_humidity(self._to_signed16(s1[6]))
         supply_air_humidity = self._scale_humidity(self._to_signed16(s1[7]))
         outside_air_humidity = self._scale_humidity(self._to_signed16(s1[8]))
         exhaust_air_humidity = self._scale_humidity(self._to_signed16(s1[9]))
-        extra_humidity = self._scale_humidity(self._to_signed16(s1[10]))
+        extra_humidity_raw = self._to_signed16(s1[10])
+        extra_humidity = (
+            None
+            if extra_humidity_raw == EXTRA_HUMIDITY_ABSENT_RAW
+            else self._scale_humidity(extra_humidity_raw)
+        )
         co2_level = s1[11]
 
         # Parse sensor block 2 (1014-1019, offset from 1014)

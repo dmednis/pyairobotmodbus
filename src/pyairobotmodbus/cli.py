@@ -32,6 +32,8 @@ def _format_data(data: AirobotData) -> str:
             if name is not None:
                 errors.append(name)
 
+    extra_temp = f"{data.extra_temp}\u00b0C" if data.extra_temp is not None else "n/a"
+    extra_hum = f"{data.extra_humidity}%" if data.extra_humidity is not None else "n/a"
     hum_ctrl = "ON" if data.humidity_control_enabled else "OFF"
     voc_ctrl = "ON" if data.voc_control_enabled else "OFF"
     pm_ctrl = "ON" if data.pm_control_enabled else "OFF"
@@ -55,14 +57,14 @@ def _format_data(data: AirobotData) -> str:
         f"  Supply air:        {data.supply_air_temp}\u00b0C",
         f"  Outside air:       {data.outside_air_temp}\u00b0C",
         f"  Exhaust air:       {data.exhaust_air_temp}\u00b0C",
-        f"  Extra sensor:      {data.extra_temp}\u00b0C",
+        f"  Extra sensor:      {extra_temp}",
         "",
         "=== Humidity ===",
         f"  Extract air:       {data.extract_air_humidity}%",
         f"  Supply air:        {data.supply_air_humidity}%",
         f"  Outside air:       {data.outside_air_humidity}%",
         f"  Exhaust air:       {data.exhaust_air_humidity}%",
-        f"  Extra sensor:      {data.extra_humidity}%",
+        f"  Extra sensor:      {extra_hum}",
         "",
         "=== Air Quality ===",
         f"  CO2:               {data.co2_level} ppm",

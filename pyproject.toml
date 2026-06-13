@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pyairobotmodbus"
-version = "0.2.0"
+version = "0.3.0"
 description = "Python library for communicating with Airobot ventilation units via Modbus TCP"
 readme = "README.md"
 license = "MIT"
