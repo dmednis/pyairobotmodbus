@@ -12,3 +12,6 @@ venv/
 .ruff_cache/
 .coverage
 .DS_Store
+
+# Not committed: this is a published library, deps resolve from pyproject.toml
+uv.lock
