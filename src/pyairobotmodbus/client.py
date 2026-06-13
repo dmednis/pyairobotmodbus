@@ -243,8 +243,13 @@ class AirobotModbusClient:
 
     @staticmethod
     def _combine_u32(regs: list[int], offset: int) -> int:
-        """Combine two consecutive 16-bit registers into a 32-bit unsigned value."""
-        return (regs[offset] << 16) | regs[offset + 1]
+        """Combine two consecutive 16-bit registers into a 32-bit unsigned value.
+
+        The device transmits the low word first (little-endian word order): the
+        lower register address holds the least-significant 16 bits. This matches
+        the write path, which writes a value to its base (low) register.
+        """
+        return (regs[offset + 1] << 16) | regs[offset]
 
     @staticmethod
     def _to_signed16(value: int) -> int:

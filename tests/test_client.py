@@ -80,9 +80,11 @@ class TestReadData:
         # 65526 unsigned = -10 signed (0x10000 - 10 = 65526)
 
         # Sensor block 2: 1014-1019 (6 registers)
-        # supply_fan=5, extract_fan=5, supply_rpm=1200,
-        # extract_rpm=1100, working_time=0x00010000
-        s2 = [5, 5, 1200, 1100, 1, 0]  # working_time = 65536 ms
+        # supply_fan=5, extract_fan=5, supply_rpm=1200, extract_rpm=1100,
+        # working_time: low word first (little-endian). reg1018=0x7860 (low),
+        # reg1019=0x79FC (high) -> 0x79FC7860 = 2046589024 ms. Both words are
+        # non-zero so a word-order regression changes the result.
+        s2 = [5, 5, 1200, 1100, 0x7860, 0x79FC]  # working_time = 2046589024 ms
 
         # Sensor block 3: 1026-1029 (4 registers)
         # errors=0 (2 regs), server_connected=1, voc=150
@@ -105,9 +107,11 @@ class TestReadData:
         r2 = [600, 800, 5, 0, 5, 0]
 
         # Settings block 3: 2009-2014 (6 registers)
-        # flags=1, boost_timeout=1800 (2 regs),
-        # overpressure_timeout=1800 (2 regs), ui_flags=9
-        r3 = [1, 0, 1800, 0, 1800, 9]
+        # flags=1, boost_timeout=1800 (2 regs, low word first),
+        # overpressure_timeout=1800 (2 regs, low word first), ui_flags=9.
+        # The value lands in the low word (base register) — exactly what
+        # write_register targets, so read and write stay consistent.
+        r3 = [1, 1800, 0, 1800, 0, 9]
 
         # Settings block 4: 2015-2018 (4 registers)
         r4 = [8, 0, 4320, 100]
@@ -171,7 +175,7 @@ class TestReadData:
         assert data.extract_fan_level == 5
         assert data.supply_fan_rpm == 1200
         assert data.extract_fan_rpm == 1100
-        assert data.working_time_ms == 65536
+        assert data.working_time_ms == 2046589024
         assert data.error_flags == ErrorFlag.NONE
         assert data.server_connected is True
         assert data.voc == 150
@@ -279,9 +283,14 @@ class TestWriteData:
 
 class TestHelpers:
     def test_combine_u32(self) -> None:
-        assert AirobotModbusClient._combine_u32([0x0001, 0x0000], 0) == 65536
+        # Device transmits the low word first (little-endian word order):
+        # the lower register address holds the least-significant 16 bits.
+        assert AirobotModbusClient._combine_u32([0x0000, 0x0001], 0) == 65536
         assert AirobotModbusClient._combine_u32([0xFFFF, 0xFFFF], 0) == 4294967295
         assert AirobotModbusClient._combine_u32([0, 0], 0) == 0
+        # Regression guard with distinct words, captured from a real unit:
+        # reg=0x7860 (low), reg+1=0x79FC (high) -> 0x79FC7860 = 2046589024
+        assert AirobotModbusClient._combine_u32([0x7860, 0x79FC], 0) == 2046589024
 
     def test_to_signed16(self) -> None:
         assert AirobotModbusClient._to_signed16(0) == 0
