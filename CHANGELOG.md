@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `AirobotConnectionError`
 
 ### Added
+- `async_get_identity()` returns the unit's serial number and MAC address as an
+  `AirobotIdentity`. They come from registers the manufacturer does not
+  document; the README's "Undocumented registers" section lists them.
+- The CLI's `read` and `monitor` show the serial number and MAC address
 - `DEFAULT_PORT` and `DEFAULT_UNIT_ID` exported from the package
 
 ### Removed

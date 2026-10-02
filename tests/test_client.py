@@ -25,7 +25,7 @@ from pyairobotmodbus.exceptions import (
     AirobotTimeoutError,
     AirobotWriteError,
 )
-from pyairobotmodbus.models import ErrorFlag, OperatingMode
+from pyairobotmodbus.models import AirobotIdentity, ErrorFlag, OperatingMode
 
 Call = Callable[[AirobotModbusClient], Awaitable[None]]
 
@@ -173,6 +173,30 @@ class TestReadData:
         monkeypatch.setattr(mock_modbus_unit, method, short_read)
         with pytest.raises(AirobotInvalidDataError, match=match):
             await client.async_get_data()
+
+
+class TestIdentity:
+    async def test_async_get_identity(self, client: AirobotModbusClient) -> None:
+        assert await client.async_get_identity() == AirobotIdentity(
+            serial_number="01234567", mac_address="02:1a:2b:3c:4d:5e"
+        )
+
+    async def test_serial_not_bcd(
+        self, client: AirobotModbusClient, mock_modbus_unit: MockModbusUnit
+    ) -> None:
+        mock_modbus_unit.input[3000] = 0x45A7
+        with pytest.raises(AirobotInvalidDataError, match="not BCD"):
+            await client.async_get_identity()
+
+    async def test_identity_block_missing(
+        self, client: AirobotModbusClient, mock_modbus_unit: MockModbusUnit
+    ) -> None:
+        # The block is undocumented, so firmware may not have it.
+        mock_modbus_unit.fail_read(
+            3000, IllegalDataAddressError(), register_type="input"
+        )
+        with pytest.raises(AirobotReadError):
+            await client.async_get_identity()
 
 
 class TestWriteData:

@@ -80,6 +80,18 @@ except AirobotError as e:
 - **Fans** — supply/extract level, RPM, and airflow (m³/h)
 - **Status** — error flags, heat recovery efficiency, working time
 
+### Identity
+
+```python
+identity = await client.async_get_identity()
+print(identity.serial_number)  # "01234567" for a label reading V01234567
+print(identity.mac_address)    # "02:1a:2b:3c:4d:5e"
+```
+
+These come from registers the manufacturer does not document (see
+[Undocumented registers](#undocumented-registers)). A unit whose firmware lacks
+them raises `AirobotReadError`.
+
 ### Device control
 
 ```python
@@ -113,6 +125,38 @@ await client.async_set_humidity_control(True)
 await client.async_set_voc_control(True)
 await client.async_set_pm_control(True)
 ```
+
+## Undocumented registers
+
+Airobot's [Modbus specification](docs/airobot-vu-modbus-basic-en-2026-06-29.pdf)
+does not cover the registers below. They were found by a read-only scan of a
+unit running firmware 544 on 2026-10-02, so other firmware may move or drop
+them. The examples use made-up values.
+
+### Decoded
+
+All are input registers, read with function code 0x04.
+
+| Register | Value | Encoding |
+|---|---|---|
+| 3000–3001 | Serial number, digits only (a label reading `V01234567` gives `01234567`) | BCD, low word first: `0x4567 0x0123` |
+| 3002–3004 | MAC address | Low byte first in each register: `0x1A02 0x3C2B 0x5E4D` is `02:1a:2b:3c:4d:5e` |
+
+`async_get_identity()` reads these.
+
+### Readable but not decoded
+
+- **Input 3005–3011:** `0x1003`, `0x0402`, `0`, `0`, `1224`, `1680`, `1188` on
+  the scanned unit.
+- **Holding 2019–2020:** the unit's IPv4 address, low word first
+  (`0x0132 0xC0A8` is `192.168.1.50`). The library doesn't read it.
+- **Gaps in the documented ranges:** input 1012–1066 and holding 2001–2089
+  answer at addresses the specification skips. Their meanings are unknown.
+
+Every other address scanned returned exception 0x02 (illegal data address).
+The scan covered input and holding 0–199 and the first 100 addresses of each
+thousand block up to 9000. Input reads of the 2000s and holding reads of the
+1000s are also rejected.
 
 ## CLI
 

@@ -21,7 +21,7 @@ from .exceptions import (
     AirobotTimeoutError,
     AirobotWriteError,
 )
-from .models import AirobotData, ErrorFlag, OperatingMode
+from .models import AirobotData, AirobotIdentity, ErrorFlag, OperatingMode
 from .registers import (
     COIL_BLOCK_1,
     COIL_BLOCK_2,
@@ -38,6 +38,7 @@ from .registers import (
     COIL_VOC_CONTROL_ENABLE,
     EXTRA_HUMIDITY_ABSENT_RAW,
     EXTRA_TEMP_ABSENT_RAW,
+    IDENTITY_BLOCK,
     LIMITS,
     REG_BOOST_TIMEOUT,
     REG_CO2_LEVEL,
@@ -57,6 +58,7 @@ from .registers import (
     REG_FIRMWARE_VERSION,
     REG_HEAT_RECOVERY_EFFICIENCY,
     REG_HUMIDITY_SETPOINT,
+    REG_MAC_ADDRESS,
     REG_MANUAL_FAN_LEVEL,
     REG_OUTSIDE_AIR_HUMIDITY,
     REG_OUTSIDE_AIR_TEMP,
@@ -64,6 +66,7 @@ from .registers import (
     REG_OVERPRESSURE_TIMEOUT,
     REG_PM25,
     REG_PM25_SETPOINT,
+    REG_SERIAL_NUMBER,
     REG_SERVER_CONNECTED,
     REG_SUPPLY_AIR_HUMIDITY,
     REG_SUPPLY_AIR_TEMP,
@@ -374,6 +377,29 @@ class AirobotModbusClient:
             humidity_control_enabled=humidity_control_enabled,
             voc_control_enabled=voc_control_enabled,
             pm_control_enabled=pm_control_enabled,
+        )
+
+    async def async_get_identity(self) -> AirobotIdentity:
+        """Read the unit's serial number and MAC address.
+
+        The specification does not document these registers, so a unit whose
+        firmware lacks them raises ``AirobotReadError``.
+        """
+        regs = await self._read_input(*IDENTITY_BLOCK)
+        low = self._at(regs, IDENTITY_BLOCK, REG_SERIAL_NUMBER)
+        high = self._at(regs, IDENTITY_BLOCK, REG_SERIAL_NUMBER + 1)
+        serial_number = f"{high:04X}{low:04X}"
+        if not serial_number.isdecimal():
+            raise AirobotInvalidDataError(
+                f"Serial number registers are not BCD: 0x{serial_number}"
+            )
+        mac = b"".join(
+            self._at(regs, IDENTITY_BLOCK, reg).to_bytes(2, "little")
+            for reg in range(REG_MAC_ADDRESS, REG_MAC_ADDRESS + 3)
+        )
+        return AirobotIdentity(
+            serial_number=serial_number,
+            mac_address=":".join(f"{b:02x}" for b in mac),
         )
 
     # ------------------------------------------------------------------

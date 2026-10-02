@@ -12,8 +12,8 @@ from typing import Any
 from modbus_connection import ModbusTcpParams
 
 from .client import DEFAULT_PORT, DEFAULT_UNIT_ID, AirobotModbusClient
-from .exceptions import AirobotError
-from .models import AirobotData, ErrorFlag, OperatingMode
+from .exceptions import AirobotError, AirobotReadError
+from .models import AirobotData, AirobotIdentity, ErrorFlag, OperatingMode
 from .registers import (
     LIMITS,
     REG_BOOST_TIMEOUT,
@@ -47,7 +47,7 @@ def _parse_bool(v: str) -> bool:
     raise ValueError(f"Invalid boolean value: {v!r} (expected on/off, true/false, 1/0)")
 
 
-def _format_data(data: AirobotData) -> str:
+def _format_data(data: AirobotData, identity: AirobotIdentity | None = None) -> str:
     """Format device data for display."""
     errors: list[str] = []
     for flag in ErrorFlag:
@@ -71,6 +71,8 @@ def _format_data(data: AirobotData) -> str:
     lines = [
         "=== Device Info ===",
         f"  Firmware version:  {data.firmware_version}",
+        f"  Serial number:     {identity.serial_number if identity else 'n/a'}",
+        f"  MAC address:       {identity.mac_address if identity else 'n/a'}",
         f"  Operating mode:    {data.operating_mode.name}",
         f"  Power:             {'ON' if data.power_on else 'OFF'}",
         (f"  Server connected:  {'Yes' if data.server_connected else 'No'}"),
@@ -234,10 +236,18 @@ async def _open_client(args: argparse.Namespace) -> AsyncIterator[AirobotModbusC
         await connection.close()
 
 
+async def _read_identity(client: AirobotModbusClient) -> AirobotIdentity | None:
+    """Return the unit's identity, or None if its firmware lacks the registers."""
+    try:
+        return await client.async_get_identity()
+    except AirobotReadError:
+        return None
+
+
 async def _cmd_read(args: argparse.Namespace) -> None:
     async with _open_client(args) as client:
         data = await client.async_get_data()
-        print(_format_data(data))
+        print(_format_data(data, await _read_identity(client)))
 
 
 async def _cmd_set(args: argparse.Namespace) -> None:
@@ -262,12 +272,13 @@ async def _cmd_set(args: argparse.Namespace) -> None:
 
 async def _cmd_monitor(args: argparse.Namespace) -> None:
     async with _open_client(args) as client:
+        identity = await _read_identity(client)
         try:
             while True:
                 data = await client.async_get_data()
                 # Clear screen
                 print("\033[2J\033[H", end="")
-                print(_format_data(data))
+                print(_format_data(data, identity))
                 print(f"\nRefreshing every {args.interval}s... (Ctrl+C to stop)")
                 await asyncio.sleep(args.interval)
         except (KeyboardInterrupt, asyncio.CancelledError):

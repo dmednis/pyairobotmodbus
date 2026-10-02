@@ -12,7 +12,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from conftest import load_sample
-from modbus_connection import ModbusConnectionError, ModbusTcpParams
+from modbus_connection import (
+    IllegalDataAddressError,
+    ModbusConnectionError,
+    ModbusTcpParams,
+)
 from modbus_connection.mock import MockModbusConnection, WriteEvent
 
 from pyairobotmodbus.cli import (
@@ -172,8 +176,27 @@ class TestCmdRead:
             ModbusTcpParams(host="192.168.1.100", port=5020)
         )
         mock_print.assert_called_once()
-        assert "Firmware" in mock_print.call_args.args[0]
+        output = mock_print.call_args.args[0]
+        assert "Firmware" in output
+        assert "Serial number:     01234567" in output
+        assert "MAC address:       02:1a:2b:3c:4d:5e" in output
         assert mock_modbus_connection.connected is False
+
+    async def test_cmd_read_without_identity_block(
+        self,
+        connection_cls: MagicMock,
+        mock_modbus_connection: MockModbusConnection,
+    ) -> None:
+        unit = mock_modbus_connection.for_unit(DEFAULT_UNIT_ID)
+        unit.fail_read(3000, IllegalDataAddressError(), register_type="input")
+        args = argparse.Namespace(host="192.168.1.100", port=502)
+        with patch("builtins.print") as mock_print:
+            await _cmd_read(args)
+
+        output = mock_print.call_args.args[0]
+        assert "Firmware" in output
+        assert "Serial number:     n/a" in output
+        assert "MAC address:       n/a" in output
 
     async def test_cmd_read_failure_closes_connection(
         self,
@@ -265,7 +288,7 @@ class TestCmdMonitor:
         ):
             await _cmd_monitor(args)
 
-        assert any("Firmware" in str(c) for c in mock_print.call_args_list)
+        assert any("01234567" in str(c) for c in mock_print.call_args_list)
         assert mock_modbus_connection.connected is False
 
 

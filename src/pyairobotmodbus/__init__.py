@@ -12,7 +12,7 @@ from .exceptions import (
     AirobotTimeoutError,
     AirobotWriteError,
 )
-from .models import AirobotData, ErrorFlag, OperatingMode
+from .models import AirobotData, AirobotIdentity, ErrorFlag, OperatingMode
 
 __version__ = version("pyairobotmodbus")
 
@@ -21,6 +21,7 @@ logging.getLogger(__name__).addHandler(logging.NullHandler())
 __all__ = [
     "AirobotModbusClient",
     "AirobotData",
+    "AirobotIdentity",
     "AirobotConnectionError",
     "AirobotError",
     "AirobotInvalidDataError",

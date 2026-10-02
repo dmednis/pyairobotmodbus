@@ -40,6 +40,16 @@ SENSOR_BLOCK_3 = (1026, 4)  # 1026-1029: errors, server connected, VOC
 SENSOR_BLOCK_4 = (1031, 4)  # 1031-1034: PM2.5, heat recovery
 SENSOR_BLOCK_5 = (1051, 2)  # 1051-1052: airflow
 
+# ---------------------------------------------------------------------------
+# Identity input registers (FC04). The manufacturer specification does not
+# document these; see "Undocumented registers" in the README.
+# ---------------------------------------------------------------------------
+
+REG_SERIAL_NUMBER = 3000  # 32-bit BCD, low word first
+REG_MAC_ADDRESS = 3002  # 3 registers, low byte first in each
+
+IDENTITY_BLOCK = (3000, 5)  # 3000-3004: serial number, MAC address
+
 # Sentinel raw values reported by optional sensors when not installed.
 # These are the signed-16 register values; the scaled readings (value / 10)
 # are 3276.7 °C and -0.1 % respectively, which the device emits when the

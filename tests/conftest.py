@@ -22,6 +22,9 @@ SAMPLE_INPUT: dict[int, list[int]] = {
     # into pm25 (that regression would yield 0x00020002 = 131074)
     1031: [2, 2, 0, 85],
     1051: [120, 115],
+    # Undocumented identity block: serial 01234567 as BCD, low word first,
+    # then MAC 02:1a:2b:3c:4d:5e with the low byte first in each register.
+    3000: [0x4567, 0x0123, 0x1A02, 0x3C2B, 0x5E4D],
 }
 SAMPLE_HOLDING: dict[int, list[int]] = {
     2000: [1],  # automatic mode
