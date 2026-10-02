@@ -32,6 +32,17 @@ class ErrorFlag(IntFlag):
 
 
 @dataclass(frozen=True)
+class AirobotIdentity:
+    """Values that identify a unit, from registers the specification omits."""
+
+    serial_number: str
+    """The label's serial without its letter prefix: V01234567 is "01234567"."""
+
+    mac_address: str
+    """Lowercase and colon-separated, like ``02:1a:2b:3c:4d:5e``."""
+
+
+@dataclass(frozen=True)
 class AirobotData:
     """Snapshot of all device data.
 

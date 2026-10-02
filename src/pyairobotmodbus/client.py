@@ -1,13 +1,17 @@
-"""Async Modbus TCP client for Airobot ventilation units."""
+"""Async client for Airobot ventilation units over a Modbus unit."""
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any, Self
+from typing import Any
 
-from pymodbus import ModbusException
-from pymodbus.client import AsyncModbusTcpClient
+from modbus_connection import (
+    ModbusError,
+    ModbusExceptionError,
+    ModbusTimeoutError,
+    ModbusUnit,
+)
 
 from .exceptions import (
     AirobotConnectionError,
@@ -17,7 +21,7 @@ from .exceptions import (
     AirobotTimeoutError,
     AirobotWriteError,
 )
-from .models import AirobotData, ErrorFlag, OperatingMode
+from .models import AirobotData, AirobotIdentity, ErrorFlag, OperatingMode
 from .registers import (
     COIL_BLOCK_1,
     COIL_BLOCK_2,
@@ -34,6 +38,7 @@ from .registers import (
     COIL_VOC_CONTROL_ENABLE,
     EXTRA_HUMIDITY_ABSENT_RAW,
     EXTRA_TEMP_ABSENT_RAW,
+    IDENTITY_BLOCK,
     LIMITS,
     REG_BOOST_TIMEOUT,
     REG_CO2_LEVEL,
@@ -53,6 +58,7 @@ from .registers import (
     REG_FIRMWARE_VERSION,
     REG_HEAT_RECOVERY_EFFICIENCY,
     REG_HUMIDITY_SETPOINT,
+    REG_MAC_ADDRESS,
     REG_MANUAL_FAN_LEVEL,
     REG_OUTSIDE_AIR_HUMIDITY,
     REG_OUTSIDE_AIR_TEMP,
@@ -60,6 +66,7 @@ from .registers import (
     REG_OVERPRESSURE_TIMEOUT,
     REG_PM25,
     REG_PM25_SETPOINT,
+    REG_SERIAL_NUMBER,
     REG_SERVER_CONNECTED,
     REG_SUPPLY_AIR_HUMIDITY,
     REG_SUPPLY_AIR_TEMP,
@@ -86,8 +93,7 @@ from .registers import (
 _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_PORT = 502
-DEFAULT_DEVICE_ID = 1
-DEFAULT_TIMEOUT = 10
+DEFAULT_UNIT_ID = 1
 
 
 def _validate_register_count(name: str, registers: list[int], expected: int) -> None:
@@ -99,155 +105,76 @@ def _validate_register_count(name: str, registers: list[int], expected: int) -> 
 
 
 class AirobotModbusClient:
-    """High-level async interface to an Airobot ventilation unit via Modbus TCP."""
+    """High-level async interface to an Airobot ventilation unit.
 
-    def __init__(
-        self,
-        host: str,
-        port: int = DEFAULT_PORT,
-        device_id: int = DEFAULT_DEVICE_ID,
-        timeout: int = DEFAULT_TIMEOUT,
-    ) -> None:
-        self._host = host
-        self._port = port
-        self._device_id = device_id
-        self._client = AsyncModbusTcpClient(
-            host=host,
-            port=port,
-            timeout=timeout,
-        )
+    Talks through a ``modbus_connection.ModbusUnit``, which owns the link:
+    it connects on the first request and reconnects after a drop.
+    """
 
-    @classmethod
-    async def create(
-        cls,
-        host: str,
-        port: int = DEFAULT_PORT,
-        device_id: int = DEFAULT_DEVICE_ID,
-        timeout: int = DEFAULT_TIMEOUT,
-    ) -> Self:
-        """Create and connect a client instance."""
-        client = cls(host, port=port, device_id=device_id, timeout=timeout)
-        await client.connect()
-        return client
-
-    @property
-    def host(self) -> str:
-        return self._host
-
-    @property
-    def port(self) -> int:
-        return self._port
+    def __init__(self, unit: ModbusUnit) -> None:
+        self._unit = unit
+        # Airobot requires at least three seconds, even on a shared link.
+        self._unit.require_timeout(3.0)
 
     @property
     def connected(self) -> bool:
-        return self._client.connected
-
-    async def connect(self) -> None:
-        """Connect to the device."""
-        try:
-            ok = await self._client.connect()
-        except TimeoutError as exc:
-            raise AirobotTimeoutError(
-                f"Timeout connecting to {self._host}:{self._port}: {exc}"
-            ) from exc
-        except (OSError, ModbusException) as exc:
-            raise AirobotConnectionError(
-                f"Failed to connect to {self._host}:{self._port}: {exc}"
-            ) from exc
-        if not ok:
-            raise AirobotConnectionError(
-                f"Failed to connect to {self._host}:{self._port}"
-            )
-
-    async def disconnect(self) -> None:
-        """Disconnect from the device."""
-        self._client.close()
-
-    async def __aenter__(self) -> Self:
-        """Connect and return client for use as async context manager."""
-        await self.connect()
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: object,
-    ) -> None:
-        """Disconnect on context manager exit."""
-        await self.disconnect()
-
-    def _ensure_connected(self) -> None:
-        """Raise if the client is not connected."""
-        if not self.connected:
-            raise AirobotConnectionError(f"Not connected to {self._host}:{self._port}")
+        return self._unit.connected
 
     # ------------------------------------------------------------------
     # Reading data
     # ------------------------------------------------------------------
 
-    async def _execute(
+    async def _execute[T](
         self,
-        operation: Callable[[], Awaitable[Any]],
+        operation: Callable[[], Awaitable[T]],
         *,
         action: str,
         error_cls: type[AirobotError],
-    ) -> Any:
+    ) -> T:
         """Run a Modbus operation, translating failures to Airobot errors.
 
         ``action`` is a present-tense phrase (e.g. ``"reading coil 4000"``) woven
-        into the error messages. ``error_cls`` is raised when the device returns
-        a protocol-level error response.
+        into the error messages. ``error_cls`` is raised when the device answers
+        with a Modbus exception response.
         """
-        self._ensure_connected()
         try:
-            result = await operation()
-        except TimeoutError as exc:
+            return await operation()
+        except ModbusTimeoutError as exc:
             raise AirobotTimeoutError(f"Timeout {action}: {exc}") from exc
-        except (OSError, ModbusException) as exc:
+        except ModbusExceptionError as exc:
+            raise error_cls(f"Modbus error {action}: {exc}") from exc
+        except ModbusError as exc:
             raise AirobotConnectionError(
                 f"Communication error {action}: {exc}"
             ) from exc
-        if result.isError():
-            raise error_cls(f"Modbus error {action}: {result}")
-        return result
 
     async def _read_input(self, address: int, count: int) -> list[int]:
         """Read input registers (FC04) and return raw values."""
-        result = await self._execute(
-            lambda: self._client.read_input_registers(
-                address=address, count=count, device_id=self._device_id
-            ),
+        registers = await self._execute(
+            lambda: self._unit.read_input_registers(address, count),
             action=f"reading input register {address}",
             error_cls=AirobotReadError,
         )
-        registers = list(result.registers)
         _validate_register_count(f"input@{address}", registers, count)
         return registers
 
     async def _read_holding(self, address: int, count: int) -> list[int]:
         """Read holding registers (FC03) and return raw values."""
-        result = await self._execute(
-            lambda: self._client.read_holding_registers(
-                address=address, count=count, device_id=self._device_id
-            ),
+        registers = await self._execute(
+            lambda: self._unit.read_holding_registers(address, count),
             action=f"reading register {address}",
             error_cls=AirobotReadError,
         )
-        registers = list(result.registers)
         _validate_register_count(f"holding@{address}", registers, count)
         return registers
 
     async def _read_coils(self, address: int, count: int) -> list[bool]:
         """Read coils and return boolean values."""
-        result = await self._execute(
-            lambda: self._client.read_coils(
-                address=address, count=count, device_id=self._device_id
-            ),
+        bits = await self._execute(
+            lambda: self._unit.read_coils(address, count),
             action=f"reading coil {address}",
             error_cls=AirobotReadError,
         )
-        bits = list(result.bits[:count])
         if len(bits) != count:
             raise AirobotInvalidDataError(
                 f"Expected {count} coils for coil@{address}, got {len(bits)}"
@@ -454,13 +381,35 @@ class AirobotModbusClient:
             pm_control_enabled=pm_control_enabled,
         )
 
+    async def async_get_identity(self) -> AirobotIdentity:
+        """Read the unit's serial number and MAC address.
+
+        The specification does not document these registers, so a unit whose
+        firmware lacks them raises ``AirobotReadError``.
+        """
+        regs = await self._read_input(*IDENTITY_BLOCK)
+        low = self._at(regs, IDENTITY_BLOCK, REG_SERIAL_NUMBER)
+        high = self._at(regs, IDENTITY_BLOCK, REG_SERIAL_NUMBER + 1)
+        serial_number = f"{high:04X}{low:04X}"
+        if not serial_number.isdecimal():
+            raise AirobotInvalidDataError(
+                f"Serial number registers are not BCD: 0x{serial_number}"
+            )
+        mac = b"".join(
+            self._at(regs, IDENTITY_BLOCK, reg).to_bytes(2, "little")
+            for reg in range(REG_MAC_ADDRESS, REG_MAC_ADDRESS + 3)
+        )
+        return AirobotIdentity(
+            serial_number=serial_number,
+            mac_address=":".join(f"{b:02x}" for b in mac),
+        )
+
     # ------------------------------------------------------------------
     # Writing data — holding registers
     # ------------------------------------------------------------------
 
     async def _write_register(self, address: int, value: int) -> None:
         """Write a single holding register with validation."""
-        self._ensure_connected()
         if address in LIMITS:
             min_val, max_val = LIMITS[address]
             if not min_val <= value <= max_val:
@@ -469,9 +418,7 @@ class AirobotModbusClient:
                     f"for register {address}"
                 )
         await self._execute(
-            lambda: self._client.write_register(
-                address=address, value=value, device_id=self._device_id
-            ),
+            lambda: self._unit.write_register(address, value),
             action=f"writing register {address}",
             error_cls=AirobotWriteError,
         )
@@ -479,9 +426,7 @@ class AirobotModbusClient:
     async def _write_coil(self, address: int, value: bool) -> None:
         """Write a single coil."""
         await self._execute(
-            lambda: self._client.write_coil(
-                address=address, value=value, device_id=self._device_id
-            ),
+            lambda: self._unit.write_coil(address, value),
             action=f"writing coil {address}",
             error_cls=AirobotWriteError,
         )
