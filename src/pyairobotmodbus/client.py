@@ -113,6 +113,8 @@ class AirobotModbusClient:
 
     def __init__(self, unit: ModbusUnit) -> None:
         self._unit = unit
+        # Airobot requires at least three seconds, even on a shared link.
+        self._unit.require_timeout(3.0)
 
     @property
     def connected(self) -> bool:

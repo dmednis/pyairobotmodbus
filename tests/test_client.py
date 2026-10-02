@@ -11,9 +11,11 @@ from modbus_connection import (
     ModbusConnectionError,
     ModbusError,
     ModbusProtocolError,
+    ModbusTcpParams,
     ModbusTimeoutError,
 )
 from modbus_connection.mock import MockModbusUnit, WriteEvent
+from modbus_connection.tmodbus import ModbusConnection
 
 import pyairobotmodbus
 from pyairobotmodbus.client import AirobotModbusClient
@@ -34,6 +36,23 @@ class TestConnection:
     def test_default_link_settings_exported(self) -> None:
         assert pyairobotmodbus.DEFAULT_PORT == 502
         assert pyairobotmodbus.DEFAULT_UNIT_ID == 1
+
+    @pytest.mark.parametrize(
+        ("other_timeout", "expected_timeout"),
+        [
+            pytest.param(1.0, 3.0, id="enforce_minimum"),
+            pytest.param(5.0, 5.0, id="preserve_longer_requirement"),
+        ],
+    )
+    def test_shared_connection_timeout(
+        self, other_timeout: float, expected_timeout: float
+    ) -> None:
+        connection = ModbusConnection(ModbusTcpParams(host="localhost"))
+        connection.for_unit(2).require_timeout(other_timeout)
+
+        AirobotModbusClient(connection.for_unit(1))
+
+        assert connection._timeout == expected_timeout
 
     async def test_connected_follows_unit(self, client: AirobotModbusClient) -> None:
         # The unit opens its link on the first request, not on construction.
