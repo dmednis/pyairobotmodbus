@@ -8,30 +8,49 @@ Python library for communicating with Airobot ventilation units via Modbus TCP.
 pip install pyairobotmodbus
 ```
 
+The library itself only needs `modbus-connection`. The CLI and the example
+below also need a Modbus backend, which the `cli` extra installs:
+
+```bash
+pip install 'pyairobotmodbus[cli]'
+```
+
 ## Usage
 
-### Context manager (recommended)
+The client talks through a [`modbus-connection`](https://home-assistant-libs.github.io/modbus-connection/)
+`ModbusUnit`, so it can share one link with other devices on the same bus.
+The unit opens the link on the first request and reconnects after a drop.
 
 ```python
 import asyncio
-from pyairobotmodbus import AirobotModbusClient, OperatingMode
+
+from modbus_connection import ModbusTcpParams
+from modbus_connection.tmodbus import ModbusConnection
+
+from pyairobotmodbus import (
+    DEFAULT_PORT,
+    DEFAULT_UNIT_ID,
+    AirobotModbusClient,
+    OperatingMode,
+)
+
 
 async def main():
-    async with AirobotModbusClient("192.168.1.100") as client:
+    connection = ModbusConnection(
+        ModbusTcpParams(host="192.168.1.100", port=DEFAULT_PORT)
+    )
+    client = AirobotModbusClient(connection.for_unit(DEFAULT_UNIT_ID))
+    try:
         data = await client.async_get_data()
         print(f"Supply air: {data.supply_air_temp}°C")
         print(f"CO2: {data.co2_level} ppm")
 
         await client.async_set_mode(OperatingMode.MANUAL)
         await client.async_set_fan_speed(7)
+    finally:
+        await connection.close()
 
 asyncio.run(main())
-```
-
-### Factory method
-
-```python
-client = await AirobotModbusClient.create("192.168.1.100")
 ```
 
 ### Error handling
@@ -42,12 +61,11 @@ All exceptions inherit from `AirobotError`:
 from pyairobotmodbus import AirobotError, AirobotConnectionError, AirobotTimeoutError
 
 try:
-    async with AirobotModbusClient("192.168.1.100") as client:
-        data = await client.async_get_data()
+    data = await client.async_get_data()
 except AirobotTimeoutError:
     print("Device did not respond in time")
 except AirobotConnectionError:
-    print("Could not connect to device")
+    print("Could not reach the device")
 except AirobotError as e:
     print(f"Communication error: {e}")
 ```
@@ -98,6 +116,8 @@ await client.async_set_pm_control(True)
 
 ## CLI
 
+Needs the `cli` extra (`pip install 'pyairobotmodbus[cli]'`).
+
 ```bash
 # Read all data from the device
 pyairobotmodbus read 192.168.1.100
@@ -107,4 +127,17 @@ pyairobotmodbus set 192.168.1.100 fan_speed 7
 
 # Monitor continuously
 pyairobotmodbus monitor 192.168.1.100
+```
+
+## Testing
+
+`modbus-connection` ships a pytest plugin whose `mock_modbus_unit` fixture is
+an in-memory unit, so tests can load registers and assert writes without a
+device:
+
+```python
+async def test_power(mock_modbus_unit):
+    client = AirobotModbusClient(mock_modbus_unit)
+    await client.async_set_power(False)
+    assert mock_modbus_unit.coil[4000] is False
 ```

@@ -5,10 +5,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from typing import Any
 
-from .client import AirobotModbusClient
+from modbus_connection import ModbusTcpParams
+
+from .client import DEFAULT_PORT, DEFAULT_UNIT_ID, AirobotModbusClient
 from .exceptions import AirobotError
 from .models import AirobotData, ErrorFlag, OperatingMode
 from .registers import (
@@ -204,14 +207,37 @@ SETTERS: dict[str, tuple[str, _Converter | None, str]] = {
 }
 
 
-async def _cmd_read(args: argparse.Namespace) -> None:
-    client = AirobotModbusClient(args.host, port=args.port)
-    await client.connect()
+_MISSING_BACKEND = """\
+Error: the CLI needs a Modbus backend, which is not installed.
+Install it with: pip install 'pyairobotmodbus[cli]'"""
+
+
+def _backend_installed() -> bool:
+    """Return whether the tmodbus backend, from the cli extra, can be imported."""
     try:
+        import modbus_connection.tmodbus  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+@asynccontextmanager
+async def _open_client(args: argparse.Namespace) -> AsyncIterator[AirobotModbusClient]:
+    """Yield a client on its own connection, closed on exit."""
+    # Imported here so the CLI module loads without the cli extra installed.
+    from modbus_connection.tmodbus import ModbusConnection
+
+    connection = ModbusConnection(ModbusTcpParams(host=args.host, port=args.port))
+    try:
+        yield AirobotModbusClient(connection.for_unit(DEFAULT_UNIT_ID))
+    finally:
+        await connection.close()
+
+
+async def _cmd_read(args: argparse.Namespace) -> None:
+    async with _open_client(args) as client:
         data = await client.async_get_data()
         print(_format_data(data))
-    finally:
-        await client.disconnect()
 
 
 async def _cmd_set(args: argparse.Namespace) -> None:
@@ -225,34 +251,27 @@ async def _cmd_set(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     method_name, converter, _ = SETTERS[param]
-    client = AirobotModbusClient(args.host, port=args.port)
-    await client.connect()
-    try:
+    async with _open_client(args) as client:
         method = getattr(client, method_name)
         if converter is None:
             await method()
         else:
             await method(converter(args.value))
         print(f"Set {param} successfully.")
-    finally:
-        await client.disconnect()
 
 
 async def _cmd_monitor(args: argparse.Namespace) -> None:
-    client = AirobotModbusClient(args.host, port=args.port)
-    await client.connect()
-    try:
-        while True:
-            data = await client.async_get_data()
-            # Clear screen
-            print("\033[2J\033[H", end="")
-            print(_format_data(data))
-            print(f"\nRefreshing every {args.interval}s... (Ctrl+C to stop)")
-            await asyncio.sleep(args.interval)
-    except (KeyboardInterrupt, asyncio.CancelledError):
-        print("\nStopped.")
-    finally:
-        await client.disconnect()
+    async with _open_client(args) as client:
+        try:
+            while True:
+                data = await client.async_get_data()
+                # Clear screen
+                print("\033[2J\033[H", end="")
+                print(_format_data(data))
+                print(f"\nRefreshing every {args.interval}s... (Ctrl+C to stop)")
+                await asyncio.sleep(args.interval)
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            print("\nStopped.")
 
 
 def main() -> None:
@@ -263,8 +282,8 @@ def main() -> None:
     parser.add_argument(
         "--port",
         type=int,
-        default=502,
-        help="Modbus TCP port (default: 502)",
+        default=DEFAULT_PORT,
+        help=f"Modbus TCP port (default: {DEFAULT_PORT})",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -289,6 +308,10 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    if not _backend_installed():
+        print(_MISSING_BACKEND, file=sys.stderr)
+        sys.exit(1)
 
     try:
         if args.command == "read":

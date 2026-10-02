@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import subprocess
+import sys
+from collections.abc import Iterator
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+from conftest import load_sample
+from modbus_connection import ModbusConnectionError, ModbusTcpParams
+from modbus_connection.mock import MockModbusConnection, WriteEvent
 
 from pyairobotmodbus.cli import (
     SETTERS,
@@ -18,7 +24,8 @@ from pyairobotmodbus.cli import (
     _parse_bool,
     main,
 )
-from pyairobotmodbus.exceptions import AirobotError
+from pyairobotmodbus.client import DEFAULT_UNIT_ID
+from pyairobotmodbus.exceptions import AirobotConnectionError, AirobotError
 from pyairobotmodbus.models import AirobotData, ErrorFlag, OperatingMode
 
 
@@ -138,77 +145,88 @@ class TestFormatData:
         assert "Filter alert:      YES" in output
 
 
-class TestCmdRead:
-    @pytest.mark.asyncio
-    async def test_cmd_read_success(self) -> None:
-        mock_client = AsyncMock()
-        mock_client.async_get_data = AsyncMock(return_value=_make_data())
-        mock_client.connect = AsyncMock()
-        mock_client.disconnect = AsyncMock()
+@pytest.fixture
+def connection_cls(
+    mock_modbus_connection: MockModbusConnection,
+) -> Iterator[MagicMock]:
+    """Route the CLI's connection to an in-memory unit holding the sample."""
+    load_sample(mock_modbus_connection.for_unit(DEFAULT_UNIT_ID))
+    with patch(
+        "modbus_connection.tmodbus.ModbusConnection",
+        return_value=mock_modbus_connection,
+    ) as cls:
+        yield cls
 
-        args = argparse.Namespace(host="192.168.1.100", port=502)
-        with (
-            patch(
-                "pyairobotmodbus.cli.AirobotModbusClient",
-                return_value=mock_client,
-            ),
-            patch("builtins.print") as mock_print,
-        ):
+
+class TestCmdRead:
+    async def test_cmd_read_success(
+        self,
+        connection_cls: MagicMock,
+        mock_modbus_connection: MockModbusConnection,
+    ) -> None:
+        args = argparse.Namespace(host="192.168.1.100", port=5020)
+        with patch("builtins.print") as mock_print:
             await _cmd_read(args)
 
-        mock_client.connect.assert_awaited_once()
-        mock_client.async_get_data.assert_awaited_once()
-        mock_client.disconnect.assert_awaited_once()
+        connection_cls.assert_called_once_with(
+            ModbusTcpParams(host="192.168.1.100", port=5020)
+        )
         mock_print.assert_called_once()
+        assert "Firmware" in mock_print.call_args.args[0]
+        assert mock_modbus_connection.connected is False
+
+    async def test_cmd_read_failure_closes_connection(
+        self,
+        connection_cls: MagicMock,
+        mock_modbus_connection: MockModbusConnection,
+    ) -> None:
+        unit = mock_modbus_connection.for_unit(DEFAULT_UNIT_ID)
+        unit.fail_requests(ModbusConnectionError("connection reset"))
+        args = argparse.Namespace(host="192.168.1.100", port=502)
+
+        with pytest.raises(AirobotConnectionError):
+            await _cmd_read(args)
+
+        assert mock_modbus_connection.connected is False
 
 
 class TestCmdSet:
-    @pytest.mark.asyncio
-    async def test_set_known_param_with_converter(self) -> None:
-        mock_client = AsyncMock()
-        mock_client.connect = AsyncMock()
-        mock_client.disconnect = AsyncMock()
-        mock_client.async_set_fan_speed = AsyncMock()
-
-        args = argparse.Namespace(
-            host="192.168.1.100", port=502, param="fan_speed", value="7"
-        )
-        with (
-            patch(
-                "pyairobotmodbus.cli.AirobotModbusClient",
-                return_value=mock_client,
+    @pytest.mark.parametrize(
+        ("param", "value", "event"),
+        [
+            pytest.param(
+                "fan_speed",
+                "7",
+                WriteEvent("holding", 2005, [7], 0x06),
+                id="with_converter",
             ),
-            patch("builtins.print"),
-        ):
+            pytest.param(
+                "reset_filter",
+                None,
+                WriteEvent("holding", 2018, [0], 0x06),
+                id="without_converter",
+            ),
+        ],
+    )
+    async def test_set_param(
+        self,
+        connection_cls: MagicMock,
+        mock_modbus_connection: MockModbusConnection,
+        param: str,
+        value: str | None,
+        event: WriteEvent,
+    ) -> None:
+        writes: list[WriteEvent] = []
+        mock_modbus_connection.for_unit(DEFAULT_UNIT_ID).on_write(writes.append)
+        args = argparse.Namespace(
+            host="192.168.1.100", port=502, param=param, value=value
+        )
+        with patch("builtins.print"):
             await _cmd_set(args)
 
-        mock_client.async_set_fan_speed.assert_awaited_once_with(7)
-        mock_client.disconnect.assert_awaited_once()
+        assert writes == [event]
+        assert mock_modbus_connection.connected is False
 
-    @pytest.mark.asyncio
-    async def test_set_param_without_converter(self) -> None:
-        """Test a setter that has no converter (e.g. reset_filter)."""
-        mock_client = AsyncMock()
-        mock_client.connect = AsyncMock()
-        mock_client.disconnect = AsyncMock()
-        mock_client.async_reset_filter_timer = AsyncMock()
-
-        args = argparse.Namespace(
-            host="192.168.1.100", port=502, param="reset_filter", value=None
-        )
-        with (
-            patch(
-                "pyairobotmodbus.cli.AirobotModbusClient",
-                return_value=mock_client,
-            ),
-            patch("builtins.print"),
-        ):
-            await _cmd_set(args)
-
-        mock_client.async_reset_filter_timer.assert_awaited_once_with()
-        mock_client.disconnect.assert_awaited_once()
-
-    @pytest.mark.asyncio
     async def test_set_unknown_param(self) -> None:
         args = argparse.Namespace(
             host="192.168.1.100", port=502, param="nonexistent", value="1"
@@ -226,54 +244,29 @@ class TestCmdSet:
 
 
 class TestCmdMonitor:
-    @pytest.mark.asyncio
-    async def test_monitor_keyboard_interrupt(self) -> None:
-        mock_client = AsyncMock()
-        mock_client.connect = AsyncMock()
-        mock_client.disconnect = AsyncMock()
-        mock_client.async_get_data = AsyncMock(return_value=_make_data())
-
-        args = argparse.Namespace(host="192.168.1.100", port=502, interval=1)
-
-        # Make asyncio.sleep raise KeyboardInterrupt to stop the loop
-        with (
-            patch(
-                "pyairobotmodbus.cli.AirobotModbusClient",
-                return_value=mock_client,
-            ),
-            patch("builtins.print"),
-            patch(
-                "pyairobotmodbus.cli.asyncio.sleep",
-                side_effect=KeyboardInterrupt,
-            ),
-        ):
-            await _cmd_monitor(args)
-
-        mock_client.disconnect.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_monitor_cancelled_error(self) -> None:
-        mock_client = AsyncMock()
-        mock_client.connect = AsyncMock()
-        mock_client.disconnect = AsyncMock()
-        mock_client.async_get_data = AsyncMock(return_value=_make_data())
-
+    @pytest.mark.parametrize(
+        "stop",
+        [
+            pytest.param(KeyboardInterrupt, id="keyboard_interrupt"),
+            pytest.param(asyncio.CancelledError, id="cancelled"),
+        ],
+    )
+    async def test_monitor_stops(
+        self,
+        connection_cls: MagicMock,
+        mock_modbus_connection: MockModbusConnection,
+        stop: type[BaseException],
+    ) -> None:
         args = argparse.Namespace(host="192.168.1.100", port=502, interval=1)
 
         with (
-            patch(
-                "pyairobotmodbus.cli.AirobotModbusClient",
-                return_value=mock_client,
-            ),
-            patch("builtins.print"),
-            patch(
-                "pyairobotmodbus.cli.asyncio.sleep",
-                side_effect=asyncio.CancelledError,
-            ),
+            patch("builtins.print") as mock_print,
+            patch("pyairobotmodbus.cli.asyncio.sleep", side_effect=stop),
         ):
             await _cmd_monitor(args)
 
-        mock_client.disconnect.assert_awaited_once()
+        assert any("Firmware" in str(c) for c in mock_print.call_args_list)
+        assert mock_modbus_connection.connected is False
 
 
 class TestMain:
@@ -454,3 +447,39 @@ class TestCliIfNameMain:
                 "pyairobotmodbus.cli", run_name="__main__", alter_sys=False
             )
             mock_run.assert_called_once()
+
+
+class TestMissingBackend:
+    """The core install has no Modbus backend; only the cli extra brings one."""
+
+    def test_command_prints_install_hint(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        with (
+            patch("sys.argv", ["pyairobotmodbus", "read", "192.168.1.100"]),
+            patch.dict(sys.modules, {"modbus_connection.tmodbus": None}),
+            patch("pyairobotmodbus.cli.asyncio.run") as mock_run,
+            pytest.raises(SystemExit, match="1"),
+        ):
+            main()
+
+        mock_run.assert_not_called()
+        assert "pip install 'pyairobotmodbus[cli]'" in capsys.readouterr().err
+
+    def test_cli_imports_without_backend(self) -> None:
+        # A fresh interpreter, so a top-level backend import in the CLI module
+        # would crash the console script with a traceback instead.
+        script = (
+            "import sys\n"
+            "sys.modules['tmodbus'] = None\n"
+            "sys.argv = ['pyairobotmodbus', 'read', '192.168.1.100']\n"
+            "from pyairobotmodbus.cli import main\n"
+            "main()\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script], capture_output=True, text=True, check=False
+        )
+
+        assert result.returncode == 1
+        assert "Traceback" not in result.stderr
+        assert "pip install 'pyairobotmodbus[cli]'" in result.stderr

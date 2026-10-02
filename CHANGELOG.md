@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.0] - 2026-10-02
+
+### Changed
+- **Breaking:** `AirobotModbusClient` now takes a `modbus_connection.ModbusUnit`
+  instead of a host, so it can share one connection with other devices on the
+  same link. The unit opens the link on the first request and reconnects after
+  a drop.
+- Depends on `modbus-connection` instead of `pymodbus`. The CLI's tmodbus
+  backend moved to a `cli` extra: `pip install 'pyairobotmodbus[cli]'`. Without
+  it, the CLI prints an install hint.
+- Modbus failures map from the `modbus_connection.ModbusError` hierarchy:
+  timeouts to `AirobotTimeoutError`, device exception responses to
+  `AirobotReadError`/`AirobotWriteError`, and other link failures to
+  `AirobotConnectionError`
+
+### Added
+- `DEFAULT_PORT` and `DEFAULT_UNIT_ID` exported from the package
+
+### Removed
+- `connect()`, `disconnect()`, `create()`, the async context manager, and the
+  `host`/`port` properties. Build a `ModbusConnection` and close it instead
+  (see the README).
+
 ## [0.3.1] - 2026-08-09
 
 ### Changed
